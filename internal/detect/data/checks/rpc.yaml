@@ -1,0 +1,141 @@
+apiVersion: argus.fingerprint/v1
+id: checks-rpc
+description: ONC RPC service exposure checks
+rules:
+  # One DUMP call names every registered RPC service. Each match below is one
+  # program number inside that answer, so the report reads as a service list
+  # rather than a single boolean.
+  #
+  # Program numbers are matched as their 4-byte big-endian encoding, which is
+  # how XDR puts them on the wire, and each is preceded by the "more entries
+  # follow" flag that starts a list element. That is what keeps the pattern from
+  # firing on a coincidental run of bytes inside a service's own data.
+  - id: rpc-registered-services
+    description: RPC services registered with the portmapper
+    kind: check
+    ports: [111]
+    service: rpcbind
+    probes:
+      - id: dump
+        send: "\x80\x00\x00(\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa0\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 8192
+    matches:
+      - id: nfs
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xa3'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: NFS is registered with the portmapper"
+            zh: "RPC：NFS 已注册到 portmapper"
+          severity: medium
+          description:
+            en: >-
+              Program 100003 is registered, so this host exports NFS. The export
+              list decides whether that matters: a share exported with
+              no_root_squash lets a client that can mount it write as root, and
+              a share exported to "*" lets anyone mount it at all. Read the list
+              with the port from "rpcinfo -p" and then "showmount -e <host>".
+            zh: >-
+              程序号 100003 已注册，说明该主机导出 NFS。是否有影响取决于导出列表：
+              以 no_root_squash 导出的共享允许能挂载它的客户端以 root 身份写入，
+              导出给 "*" 的共享则任何主机都可挂载。用 "rpcinfo -p" 取到端口后，
+              执行 "showmount -e <host>" 读取导出列表。
+          refs:
+            - "https://book.hacktricks.xyz/network-services-pentesting/nfs-service-pentesting"
+
+      - id: mountd
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xa5'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: mountd is registered with the portmapper"
+            zh: "RPC：mountd 已注册到 portmapper"
+          severity: medium
+          description:
+            en: >-
+              Program 100005 handles NFS mount requests and holds the export
+              list. "showmount -e <host>" reaches it directly when it is on a
+              well-known port, and otherwise needs the port from "rpcinfo -p".
+            zh: >-
+              程序号 100005 处理 NFS 挂载请求并保存导出列表。当它监听在已知端口时，
+              "showmount -e <host>" 可直接访问；否则需先用 "rpcinfo -p" 取端口。
+
+      - id: ypserv
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xa4'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: NIS (ypserv) is registered with the portmapper"
+            zh: "RPC：NIS（ypserv）已注册到 portmapper"
+          severity: medium
+          description:
+            en: >-
+              Program 100004 is NIS. An NIS domain can often be enumerated
+              without credentials, and its maps contain the password hashes for
+              every account in the domain. Find the domain name first, then try
+              "ypcat -d <domain> passwd" from a client on the same network.
+            zh: >-
+              程序号 100004 为 NIS。NIS 域通常可在无凭据情况下被枚举，
+              其 map 中包含域内所有账号的口令散列。先确定域名，
+              再在同一网络的客户端上尝试 "ypcat -d <domain> passwd"。
+          refs:
+            - "https://book.hacktricks.xyz/network-services-pentesting/nis-ypenumerate"
+
+      - id: nlockmgr
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xb5'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: NFS lock manager is registered with the portmapper"
+            zh: "RPC：NFS 锁管理器已注册到 portmapper"
+          severity: info
+          description:
+            en: >-
+              Program 100021, the NFS lock manager. On its own it is only
+              supporting evidence that NFS is in use; the exports themselves
+              come from mountd.
+            zh: >-
+              程序号 100021，NFS 锁管理器。它本身只能作为存在 NFS 的旁证，
+              导出信息需从 mountd 获取。
+
+      - id: status
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xb8'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: rpc.statd is registered with the portmapper"
+            zh: "RPC：rpc.statd 已注册到 portmapper"
+          severity: info
+          description:
+            en: >-
+              Program 100024, the NFS status monitor. It is the service that
+              older rpc.statd format-string issues were reported in, so its
+              presence is worth noting even though it is not itself a finding.
+            zh: >-
+              程序号 100024，NFS 状态监视器。早期 rpc.statd 格式化字符串问题正是出现在
+              该服务上，因此它的存在值得记录，尽管其本身并非一个漏洞。
+
+      - id: rquotad
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xab'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: rquotad is registered with the portmapper"
+            zh: "RPC：rquotad 已注册到 portmapper"
+          severity: info
+          description:
+            en: "Program 100011, the remote quota server that accompanies NFS exports."
+            zh: "程序号 100011，随 NFS 导出提供的远程配额服务。"
+
+      - id: nfs-acl
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x87\x83'
+        set: {service: rpcbind}
+        finding:
+          title:
+            en: "RPC: the NFS ACL service is registered with the portmapper"
+            zh: "RPC：NFS ACL 服务已注册到 portmapper"
+          severity: info
+          description:
+            en: "Program 100227, the NFSv3 ACL service. Supporting evidence that this host serves NFSv3."
+            zh: "程序号 100227，NFSv3 ACL 服务。可作为该主机提供 NFSv3 的旁证。"

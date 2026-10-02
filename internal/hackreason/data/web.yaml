@@ -1,0 +1,163 @@
+apiVersion: argus.hackreason/v1
+id: web
+description: HTTP and HTTPS application servers
+entries:
+  - id: http
+    ports: [80, 8080, 8000, 8008, 8081, 8088, 8888, 9000, 9080, 18080]
+    service: http
+    any_port: true
+    title:
+      en: "HTTP application"
+      zh: "HTTP 应用"
+    points:
+      en:
+        - "Fingerprint the stack, then check that exact version for known issues"
+        - "Fetch robots.txt, sitemap.xml and common backup names; forgotten paths are the usual way in"
+        - "Try directory listing on every directory you find"
+        - "Look at the response headers: missing security headers and verbose errors both tell you something"
+        - "Enumerate virtual hosts, since the interesting app is often not the default one"
+      zh:
+        - "先识别技术栈，再针对该精确版本查询已知问题"
+        - "抓取 robots.txt、sitemap.xml 与常见备份文件名；被遗忘的路径通常就是入口"
+        - "对每个发现的目录尝试目录列举"
+        - "检查响应头：缺失的安全头与详细的报错信息都有价值"
+        - "枚举虚拟主机，真正有价值的应用往往不是默认站点"
+    tools: [ffuf, feroxbuster, gobuster, nikto, curl]
+    refs:
+      - "https://owasp.org/www-project-top-ten/"
+
+  - id: https
+    ports: [443, 8443, 9443, 10443, 4443]
+    service: https
+    title:
+      en: "HTTPS application"
+      zh: "HTTPS 应用"
+    points:
+      en:
+        - "Read the certificate: subject, SANs and issuer name often leak internal host names and the deployment style"
+        - "Compare the TLS configuration against the same host on other ports; mismatches reveal separate stacks"
+        - "A shared wildcard certificate is a strong hint about what else exists in the same estate"
+        - "Check for host name based routing: the same IP often serves several sites"
+      zh:
+        - "读取证书：subject、SAN 与签发者常会泄露内部主机名与部署方式"
+        - "对比同一主机其他端口的 TLS 配置；不一致说明是两套独立服务"
+        - "共用通配符证书是同一资产下还存在其他系统的强提示"
+        - "检查基于主机名的路由：同一 IP 往往承载多个站点"
+    tools: [openssl, testssl.sh, sslscan, ffuf]
+    refs:
+      - "https://owasp.org/www-project-web-security-testing-guide/"
+
+  - id: tomcat
+    ports: [8080, 8009, 8443, 7001, 7002]
+    service: http
+    title:
+      en: "Java application server (Tomcat, Weblogic, JBoss)"
+      zh: "Java 应用服务器（Tomcat、Weblogic、JBoss）"
+    points:
+      en:
+        - "Check the manager and host-manager applications; default or weak manager credentials are still common"
+        - "A reachable manager application allows deploying a WAR, which is direct code execution"
+        - "Look for exposed administrative consoles and the AJP connector, which has its own file read and deserialisation history"
+        - "JPEG and Java deserialisation endpoints are the usual path on these stacks"
+      zh:
+        - "检查 manager 与 host-manager 应用；默认或弱 manager 凭据至今仍很常见"
+        - "可访问的 manager 应用允许部署 WAR，等价于直接代码执行"
+        - "留意暴露的管理控制台与 AJP 连接器，后者有自己的文件读取与反序列化历史"
+        - "在这类栈上，JPEG/Java 反序列化端点通常就是突破口"
+    tools: [curl, msfvenom, ysoserial, nxc]
+    refs:
+      - "https://tomcat.apache.org/tomcat-9.0-doc/manager-howto.html"
+
+  - id: jenkins
+    ports: [8080, 50000]
+    service: http
+    title:
+      en: "Jenkins CI"
+      zh: "Jenkins 持续集成"
+    points:
+      en:
+        - "Check for anonymous read access, which exposes build logs, credentials ids and job configuration"
+        - "The script console is remote code execution by design; a reached console is game over"
+        - "Build logs and agent ports frequently leak deployment credentials for other systems"
+      zh:
+        - "确认是否允许匿名读取，那会暴露构建日志、凭据 ID 与任务配置"
+        - "脚本控制台本身即设计为可执行代码；进入控制台等同于完全控制"
+        - "构建日志与 agent 端口经常泄露其他系统的部署凭据"
+    tools: [curl, nxc]
+    refs:
+      - "https://www.jenkins.io/doc/book/managing/security/"
+
+  - id: gitlab
+    ports: [80, 443, 8080, 8443, 9090]
+    service: http
+    title:
+      en: "GitLab"
+      zh: "GitLab"
+    points:
+      en:
+        - "Check registration policy and whether public projects expose CI variables or deploy keys"
+        - "Enumerate users and projects; private defaults are often left permissive"
+        - "Look for the version, since GitLab has a steady stream of pre-auth issues"
+      zh:
+        - "确认注册策略，以及公开项目是否暴露 CI 变量或部署密钥"
+        - "枚举用户与项目；私有默认配置经常被放宽"
+        - "确认版本号，GitLab 历史上持续出现认证前问题"
+    tools: [curl, nuclei]
+    refs:
+      - "https://docs.gitlab.com/ee/security/"
+
+  - id: grafana
+    ports: [3000, 3001]
+    service: http
+    title:
+      en: "Grafana"
+      zh: "Grafana"
+    points:
+      en:
+        - "Default administrator credentials are frequently unchanged"
+        - "Datasources stored in Grafana often hold credentials for the systems it monitors"
+        - "Anonymous access and public dashboards can leak internal architecture"
+      zh:
+        - "管理员默认凭据经常未被修改"
+        - "Grafana 中配置的数据源通常保存着被监控系统的凭据"
+        - "匿名访问与公开仪表盘可能泄露内部架构信息"
+    tools: [curl, nuclei]
+    refs:
+      - "https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/"
+
+  - id: kibana
+    ports: [5601]
+    service: http
+    title:
+      en: "Kibana"
+      zh: "Kibana"
+    points:
+      en:
+        - "Unauthenticated Kibana usually means unauthenticated Elasticsearch behind it"
+        - "Discover saved objects and index patterns to see what data the platform collects"
+      zh:
+        - "Kibana 未授权通常意味着其背后的 Elasticsearch 也未授权"
+        - "查看已保存对象与索引模式，了解平台采集了哪些数据"
+    tools: [curl]
+    refs:
+      - "https://www.elastic.co/guide/en/kibana/current/security.html"
+
+  - id: upnp
+    ports: [1900, 5000]
+    proto: udp
+    service: upnp
+    title:
+      en: "UPnP / SSDP discovery"
+      zh: "UPnP / SSDP 发现"
+    points:
+      en:
+        - "SSDP responses enumerate device model, firmware and control URLs without any authentication"
+        - "The device description XML names the control endpoint that accepts SOAP calls"
+        - "Home routers here are a common pivot into the internal network"
+      zh:
+        - "SSDP 响应无需任何认证即可枚举设备型号、固件版本与控制 URL"
+        - "设备描述 XML 会指出接受 SOAP 调用的控制端点"
+        - "此类家用路由器常被用作进入内网的跳板"
+    tools: [nmap, miranda, upnpc]
+    refs:
+      - "https://www.upnp.org/specs/arch/UPnP-arch-DeviceArchitecture-v2.0.pdf"

@@ -1,0 +1,120 @@
+apiVersion: argus.fingerprint/v1
+id: http
+description: HTTP and HTTPS servers
+rules:
+  - id: http-plain
+    description: Plaintext HTTP
+    tunnel: ""
+    ports: [80, 81, 88, 591, 2082, 2086, 3000, 3128, 5000, 7001, 8000, 8008, 8080, 8081, 8082, 8088, 8090, 8180, 8280, 8500, 8888, 8983, 9000, 9080, 9090, 9200, 10000, 11371, 15672, 18080, 50000]
+    probes: &http-probes
+      - id: get-root
+        description: HTTP GET /
+        send: "GET / HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+        read_timeout: 3s
+        read_bytes: 16384
+    matches: &http-matches
+      - id: nginx
+        pattern: '(?im)^Server:\s*nginx/(?P<version>[\w.\-]+)'
+        set: {service: http, product: nginx, cpe: "cpe:/a:igor_sysoev:nginx"}
+      - id: apache-httpd
+        pattern: '(?im)^Server:\s*Apache/(?P<version>[\w.\-]+)'
+        set: {service: http, product: Apache httpd, cpe: "cpe:/a:apache:http_server"}
+        fields:
+          # Apache appends platform and module details after a single opening
+          # parenthesis and never closes it: "Apache/2.4.37 (Alibaba Cloud
+          # Linux) OpenSSL/1.1.1k mod_perl/2.0.12 Perl/v5.26.3". Requiring a
+          # matching ")" matched nothing on a real server.
+          info: '(?im)^Server:\s*Apache/[\w.\-]+ \((.+)$'
+      - id: iis
+        pattern: '(?im)^Server:\s*Microsoft-IIS/(?P<version>[\w.\-]+)'
+        set: {service: http, product: Microsoft IIS, ostype: Windows}
+      - id: tomcat-coyote
+        pattern: '(?im)^Server:\s*Apache-Coyote/(?P<version>[\w.\-]+)'
+        set: {service: http, product: Apache Tomcat}
+      - id: tomcat
+        pattern: '(?i)Apache[ -]Tomcat/(?P<version>[\w.\-]+)'
+        set: {service: http, product: Apache Tomcat}
+      - id: jetty
+        pattern: '(?im)^Server:\s*Jetty\((?P<version>[\w.\-]+)\)'
+        set: {service: http, product: Jetty}
+      - id: lighttpd
+        pattern: '(?im)^Server:\s*lighttpd/(?P<version>[\w.\-]+)'
+        set: {service: http, product: lighttpd}
+      - id: gunicorn
+        pattern: '(?im)^Server:\s*gunicorn/(?P<version>[\w.\-]+)'
+        set: {service: http, product: gunicorn}
+      - id: werkzeug
+        pattern: '(?im)^Server:\s*Werkzeug/(?P<version>[\w.\-]+)'
+        set: {service: http, product: Werkzeug, ostype: Python}
+      - id: uvicorn
+        pattern: '(?im)^Server:\s*uvicorn'
+        set: {service: http, product: uvicorn, ostype: Python}
+      - id: waitress
+        pattern: '(?im)^Server:\s*waitress'
+        set: {service: http, product: waitress, ostype: Python}
+      - id: go-http
+        pattern: '(?im)^Server:\s*Go-http-client'
+        set: {service: http, product: Go net/http, ostype: Go}
+      - id: express
+        pattern: '(?im)^X-Powered-By:\s*Express'
+        set: {service: http, product: Express, ostype: Node.js}
+      - id: php
+        pattern: '(?im)^X-Powered-By:\s*PHP/(?P<version>[\w.\-]+)'
+        set: {service: http, product: PHP, ostype: PHP}
+      - id: aspnet
+        pattern: '(?im)^X-Powered-By:\s*ASP\.NET'
+        set: {service: http, product: ASP.NET, ostype: Windows}
+      - id: cloudflare
+        pattern: '(?im)^Server:\s*cloudflare'
+        set: {service: http, product: cloudflare}
+      - id: elasticsearch
+        pattern: '(?is)"(?:cluster_name|lucene_version|tagline)"\s*:'
+        set: {service: http, product: Elasticsearch}
+        fields:
+          version: '"number"\s*:\s*"([^"]+)"'
+      - id: kibana
+        pattern: '(?is)"(?:kibana_)?version"\s*:\s*\{'
+        set: {service: http, product: Kibana}
+        fields:
+          version: '"number"\s*:\s*"([^"]+)"'
+      - id: docker-api
+        pattern: '(?is)"ApiVersion"\s*:'
+        set: {service: http, product: Docker Engine API}
+        fields:
+          version: '"Version"\s*:\s*"([^"]+)"'
+      - id: kubernetes-api
+        pattern: '(?is)"major"\s*:\s*"[^"]*"\s*,\s*"minor"\s*:'
+        set: {service: http, product: Kubernetes API}
+        fields:
+          version: '"gitVersion"\s*:\s*"v?([^"]+)"'
+      - id: jenkins
+        pattern: '(?im)^X-Jenkins:\s*(?P<version>[\w.\-]+)'
+        set: {service: http, product: Jenkins}
+      - id: server-name-version
+        pattern: '(?im)^Server:\s*(?P<product>[A-Za-z][\w.\-]*)/(?P<version>[\w.\-]+)'
+        set: {service: http}
+      - id: server-header
+        pattern: '(?im)^Server:\s*(?P<product>[^\r\n]{1,120})'
+        set: {service: http}
+      - id: generic-http
+        pattern: '^HTTP/1\.[01] \d{3}'
+        set: {service: http}
+
+  - id: https
+    description: TLS wrapped HTTP
+    tunnel: ssl
+    ports: [443, 4443, 7443, 8443, 8834, 8920, 9183, 9443, 10443, 2083, 2087, 2096, 6443, 6444, 3001, 5001, 8084, 8091, 8444, 9444]
+    probes: *http-probes
+    matches: *http-matches
+
+  - id: http-any-port
+    description: Plaintext HTTP on a port that is not in the list above
+    tunnel: ""
+    probes: *http-probes
+    matches: *http-matches
+
+  - id: https-any-port
+    description: TLS wrapped HTTP on a port that is not in the list above
+    tunnel: ssl
+    probes: *http-probes
+    matches: *http-matches

@@ -1,0 +1,45 @@
+apiVersion: argus.fingerprint/v1
+id: ftp
+description: FTP servers
+rules:
+  - id: ftp-banner
+    description: FTP 220 greeting
+    ports: [21, 2121, 990]
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 2s
+        read_bytes: 512
+    matches:
+      - id: vsftpd
+        pattern: '^220[-\s].*(?i)vsftpd'
+        set: {service: ftp, product: vsftpd}
+        fields:
+          version: '(?i)vsftpd[ /]([^\s\r\n\)]+)'
+      - id: proftpd
+        pattern: '^220[-\s].*(?i)ProFTPD'
+        set: {service: ftp, product: ProFTPD}
+        fields:
+          version: '(?i)ProFTPD[ /]([^\s\r\n\)]+)'
+      - id: pure-ftpd
+        pattern: '^220[-\s].*(?i)Pure-FTPd'
+        set: {service: ftp, product: Pure-FTPd}
+      - id: filezilla
+        pattern: '(?i)FileZilla Server'
+        set: {service: ftp, product: FileZilla Server}
+        fields:
+          version: '(?i)FileZilla Server ([^\s\r\n]+)'
+      - id: microsoft-ftp
+        pattern: '(?i)Microsoft FTP Service'
+        set: {service: ftp, product: Microsoft FTP Service, ostype: Windows}
+      - id: wuftpd
+        pattern: '(?i)wu-ftpd'
+        set: {service: ftp, product: wu-ftpd}
+      - id: generic-ftp
+        pattern: '^220[-\s]'
+        set: {service: ftp}
+        fields:
+          product: '^220[- ](.{1,80})'
+      - id: ftp-auth-required
+        pattern: '^530[-\s]'
+        set: {service: ftp, info: "authentication required"}

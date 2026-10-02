@@ -1,0 +1,32 @@
+apiVersion: argus.fingerprint/v1
+id: rtsp
+description: RTSP streaming servers
+rules:
+  - id: rtsp-options
+    description: RTSP OPTIONS
+    ports: [554, 8554]
+    probes:
+      - id: options
+        send: "OPTIONS * RTSP/1.0\r\nCSeq: 1\r\nUser-Agent: {{agent}}/{{argus_version}}\r\n\r\n"
+        read_timeout: 3s
+        read_bytes: 1024
+    matches:
+      - id: rtsp
+        pattern: '^RTSP/\d\.\d \d{3}'
+        set: {service: rtsp}
+        fields:
+          product: '(?im)^Server:\s*([^\r\n]{1,80})'
+          info: '(?im)^Public:\s*([^\r\n]{1,80})'
+
+  - id: rtmp-handshake
+    description: RTMP handshake
+    ports: [1935]
+    probes:
+      - id: c0
+        send: "\x03"
+        read_timeout: 3s
+        read_bytes: 512
+    matches:
+      - id: rtmp
+        pattern: '^\x03'
+        set: {service: rtmp, product: Adobe RTMP}

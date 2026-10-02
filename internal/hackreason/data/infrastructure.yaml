@@ -1,0 +1,305 @@
+apiVersion: argus.hackreason/v1
+id: infrastructure
+description: File sharing, directory services, network services and container platforms
+entries:
+  - id: smb
+    ports: [445, 139]
+    service: microsoft-ds
+    any_port: true
+    title:
+      en: "SMB file sharing"
+      zh: "SMB 文件共享"
+    points:
+      en:
+        - "List shares and check for null sessions before spending time on credentials"
+        - "Check whether SMB signing is required; where it is not, relay attacks are on the table"
+        - "Review the dialect: SMBv1 hosts carry well-known pre-auth remote code execution bugs"
+        - "A writable share is a foothold, so check permissions rather than just names"
+      zh:
+        - "先列出共享并检查空会话，再决定是否投入时间做凭据攻击"
+        - "确认是否强制 SMB 签名；未强制时存在中继攻击面"
+        - "关注方言版本：启用 SMBv1 的主机带有知名的认证前远程代码执行漏洞"
+        - "可写共享即为落脚点，因此要检查权限而不只是共享名"
+    tools: [nxc, smbclient, smbmap, impacket]
+    refs:
+      - "https://learn.microsoft.com/en-us/windows-server/storage/file-server/file-server-smb-overview"
+      - "https://attack.mitre.org/techniques/T1021/002/"
+
+  - id: netbios
+    ports: [137, 138]
+    proto: udp
+    service: netbios-ns
+    any_port: true
+    title:
+      en: "NetBIOS name service"
+      zh: "NetBIOS 名称服务"
+    points:
+      en:
+        - "Name and workgroup queries leak host names, domain membership and sometimes the OS version"
+        - "Useful for building the host inventory before any credentialed access"
+      zh:
+        - "名称与工作组查询会泄露主机名、域成员关系，有时还包括系统版本"
+        - "在取得任何凭据之前，它有助于先构建主机清单"
+    tools: [nbtscan, nmblookup]
+    refs:
+      - "https://www.ietf.org/rfc/rfc1001.txt"
+
+  - id: ftp
+    ports: [21, 2121]
+    service: ftp
+    any_port: true
+    title:
+      en: "FTP"
+      zh: "FTP"
+    points:
+      en:
+        - "Test anonymous access first, including upload"
+        - "Check for a writable directory that maps to a web root, which turns upload into code execution"
+        - "The protocol is cleartext, so passive and active data channels are readable on the wire"
+      zh:
+        - "优先测试匿名访问，包括匿名上传"
+        - "检查可写目录是否对应 Web 根目录，那会把上传变成代码执行"
+        - "该协议为明文，被动与主动数据通道都可在链路上读取"
+    tools: [ftp, lftp, nxc, hydra]
+    refs:
+      - "https://attack.mitre.org/techniques/T1071/"
+
+  - id: nfs
+    ports: [2049, 111, 20048]
+    service: nfs
+    any_port: true
+    title:
+      en: "NFS exports"
+      zh: "NFS 导出"
+    points:
+      en:
+        - "showmount -e reveals the export list, and no_root_squash exports let you write as root"
+        - "Mounting an export that maps to a home or web directory is a direct path to a session"
+        - "NFSv3 exposes UIDs unauthenticated, so ownership can be impersonated client side"
+      zh:
+        - "showmount -e 会暴露导出列表；no_root_squash 的导出允许以 root 身份写入"
+        - "挂载映射到用户家目录或 Web 目录的导出，即可直接获得会话"
+        - "NFSv3 的 UID 不带认证，可在客户端侧冒充属主"
+    tools: [showmount, mount.nfs, nxc]
+    refs:
+      - "https://nfs.sourceforge.net/nfs-howto/ar01s06.html"
+
+  - id: rsync
+    ports: [873]
+    service: rsync
+    any_port: true
+    title:
+      en: "rsync daemon"
+      zh: "rsync 守护进程"
+    points:
+      en:
+        - "List modules without credentials; a common deployment exposes the whole filesystem"
+        - "Look for a writable module, which allows dropping a file where it will be executed"
+      zh:
+        - "无需凭据即可列出 module；常见部署会暴露整个文件系统"
+        - "寻找可写 module，它允许把文件投递到会被执行的位置"
+    tools: [rsync, nxc]
+    refs:
+      - "https://rsync.samba.org/ftp/rsync/rsync.html"
+
+  - id: rpcbind
+    ports: [111]
+    service: rpcbind
+    title:
+      en: "RPC portmapper"
+      zh: "RPC portmapper"
+    points:
+      en:
+        - "rpcinfo enumerates every registered RPC service and the port it listens on"
+        - "This is how NFS, NIS and other RPC services are discovered on an otherwise quiet host"
+      zh:
+        - "rpcinfo 会枚举所有已注册的 RPC 服务及其监听端口"
+        - "在端口不明显的动态主机上，这是发现 NFS、NIS 等 RPC 服务的方式"
+    tools: [rpcinfo, nmap]
+    refs:
+      - "https://www.ietf.org/rfc/rfc1833.txt"
+
+  - id: ldap
+    ports: [389, 636, 3268, 3269]
+    service: ldap
+    any_port: true
+    title:
+      en: "LDAP directory"
+      zh: "LDAP 目录服务"
+    points:
+      en:
+        - "Try an anonymous bind and a base-object query first; both are frequently allowed"
+        - "A readable directory gives you the full user, group and computer inventory"
+        - "Descriptions and other free text attributes are the usual place to find passwords"
+        - "Cleartext LDAP on 389 also carries simple bind credentials on the wire"
+      zh:
+        - "先尝试匿名绑定与 base 对象查询，这两者经常被允许"
+        - "可读目录会给出完整的用户、组与计算机清单"
+        - "description 等自由文本属性通常是口令的藏身处"
+        - "389 上的明文 LDAP 会在链路上明文传输 simple bind 凭据"
+    tools: [ldapsearch, bloodhound, nxc]
+    refs:
+      - "https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-adts/"
+
+  - id: kerberos
+    ports: [88, 464]
+    service: kerberos-sec
+    any_port: true
+    title:
+      en: "Kerberos"
+      zh: "Kerberos"
+    points:
+      en:
+        - "The KDC answers without credentials, so user enumeration is possible from the outside"
+        - "Pre-authentication disabled accounts can be asked for a ticket that is then cracked offline"
+        - "This port confirms a domain controller, which changes the whole approach"
+      zh:
+        - "KDC 无需凭据即可应答，因此可从外部进行用户名枚举"
+        - "对未开启预认证的账户可申请票据，随后离线破解"
+        - "该端口确认了域控身份，这会改变整体思路"
+    tools: [kerbrute, impacket-GetNPUsers, nxc]
+    refs:
+      - "https://attack.mitre.org/techniques/T1558/"
+
+  - id: snmp
+    ports: [161, 162]
+    proto: udp
+    service: snmp
+    any_port: true
+    title:
+      en: "SNMP"
+      zh: "SNMP"
+    points:
+      en:
+        - "Try the default community strings public and private, plus the v3 default of no authentication"
+        - "The tree leaks interfaces, routes, installed software, running processes and local accounts"
+        - "Write access via a read-write community string usually allows changing device configuration"
+      zh:
+        - "先尝试默认团体名 public 与 private，以及 v3 默认的免认证配置"
+        - "MIB 树会泄露接口、路由、已装软件、运行进程与本地账户"
+        - "通过读写团体名获得写权限后，通常可以修改设备配置"
+    tools: [snmpwalk, onesixtyone, snmp-check]
+    refs:
+      - "https://www.ietf.org/rfc/rfc1157.txt"
+
+  - id: dns
+    ports: [53]
+    proto: udp
+    service: domain
+    any_port: true
+    title:
+      en: "DNS"
+      zh: "DNS"
+    points:
+      en:
+        - "Attempt a zone transfer against every name server you find"
+        - "Reverse sweeps map the subnet faster than port scanning it"
+        - "Check for recursion, which turns the server into a reflector"
+        - "Internal names resolved by this server define the next targets"
+      zh:
+        - "对发现的每台名称服务器尝试区域传送"
+        - "反向扫描比端口扫描更快地勾勒出网段结构"
+        - "确认是否开放递归，那会使服务器成为反射源"
+        - "该服务器解析出的内部名称就是下一批目标"
+    tools: [dig, dnsrecon, dnsenum, nslookup]
+    refs:
+      - "https://attack.mitre.org/techniques/T1590/002/"
+
+  - id: mail-transfer
+    ports: [25, 110, 143, 587]
+    service: smtp
+    any_port: true
+    title:
+      en: "Mail services"
+      zh: "邮件服务"
+    points:
+      en:
+        - "Check for an open relay and for user enumeration through VRFY and EXPN"
+        - "Mail servers normally leak the internal host and domain naming scheme"
+        - "POP3 and IMAP without TLS expose credentials on the wire"
+      zh:
+        - "检查是否开放中继，以及能否通过 VRFY 与 EXPN 枚举用户"
+        - "邮件服务器通常会泄露内部主机与域名命名规则"
+        - "未启用 TLS 的 POP3 与 IMAP 会在链路上暴露凭据"
+    tools: [swaks, smtp-user-enum, nxc]
+    refs:
+      - "https://attack.mitre.org/techniques/T1114/"
+
+  - id: docker-api
+    ports: [2375, 2376, 4243]
+    service: docker
+    any_port: true
+    title:
+      en: "Docker API"
+      zh: "Docker API"
+    points:
+      en:
+        - "An exposed daemon on 2375 is direct root on the host: ask it to run a container with the host filesystem mounted"
+        - "TLS on 2376 only helps if the client certificate is actually required"
+        - "The container list usually names every other service on the platform"
+      zh:
+        - "2375 上暴露的守护进程等同于宿主机 root：让它运行一个挂载宿主文件系统的容器即可"
+        - "2376 上的 TLS 只有在真正要求客户端证书时才有意义"
+        - "容器列表通常能暴露该平台上所有其他服务"
+    tools: [docker, curl, nxc]
+    refs:
+      - "https://docs.docker.com/engine/security/protect-access/"
+
+  - id: kubernetes-api
+    ports: [6443, 8443, 10250, 10255, 2379, 2380]
+    service: kubernetes
+    any_port: true
+    title:
+      en: "Kubernetes control plane"
+      zh: "Kubernetes 控制面"
+    points:
+      en:
+        - "Check whether anonymous requests are authorised, and read the cluster version"
+        - "The kubelet API on 10250 is frequently unauthenticated and allows command execution inside pods"
+        - "An exposed etcd on 2379 holds the full cluster state, including secrets"
+        - "Service account tokens found in a pod are the usual path to cluster-wide access"
+      zh:
+        - "确认是否允许匿名请求授权，并读取集群版本"
+        - "10250 上的 kubelet API 经常未授权，可在 Pod 内执行命令"
+        - "2379 上暴露的 etcd 保存着完整集群状态，包括 secret"
+        - "Pod 中发现的 service account token 通常是获得集群级访问的路径"
+    tools: [kubectl, kube-hunter, curl]
+    refs:
+      - "https://kubernetes.io/docs/concepts/security/"
+
+  - id: consul
+    ports: [8500, 8300, 8301, 8600]
+    service: http
+    title:
+      en: "HashiCorp Consul"
+      zh: "HashiCorp Consul"
+    points:
+      en:
+        - "An open Consul UI lists every registered service and its health checks"
+        - "The KV store regularly contains configuration, including credentials and feature toggles"
+        - "Check for a usable ACL token; without one the whole catalogue is readable"
+      zh:
+        - "开放的 Consul UI 会列出所有注册服务及其健康检查"
+        - "KV 存储中通常包含配置，其中包括凭据与功能开关"
+        - "确认是否存在可用的 ACL token；没有时整个目录都可读"
+    tools: [curl, consul]
+    refs:
+      - "https://developer.hashicorp.com/consul/docs/security"
+
+  - id: etcd
+    ports: [2379, 2380]
+    service: etcd-client
+    any_port: true
+    title:
+      en: "etcd"
+      zh: "etcd"
+    points:
+      en:
+        - "An unauthenticated etcd lets you read and write every key in the cluster"
+        - "Keys routinely contain service tokens and, in Kubernetes deployments, sealed secrets"
+      zh:
+        - "未授权的 etcd 允许读写集群中的每一个键"
+        - "键值中常含服务令牌，在 Kubernetes 部署中还包括加密存储的 secret"
+    tools: [etcdctl, curl]
+    refs:
+      - "https://etcd.io/docs/latest/op-guide/security/"

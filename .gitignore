@@ -1,0 +1,17 @@
+# build artefacts
+/argus
+/argus.exe
+/dist/
+*.test
+*.out
+coverage.txt
+
+# editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# local scratch
+/tmp/
+scratch/

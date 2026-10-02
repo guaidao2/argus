@@ -1,0 +1,144 @@
+apiVersion: argus.hackreason/v1
+id: remote-access
+description: Remote administration and terminal services
+entries:
+  - id: ssh
+    ports: [22, 222, 2222, 8022, 10022]
+    service: ssh
+    any_port: true
+    title:
+      en: "SSH remote administration"
+      zh: "SSH 远程管理"
+    points:
+      en:
+        - "Enumerate the auth methods the server allows; password auth reopens credential attacks that key-only hosts do not have"
+        - "Look for reused or default credentials, and for keys without a passphrase in reachable home directories"
+        - "Check whether the banner exposes the exact build, which maps directly onto known CVEs"
+        - "Test for username enumeration through timing differences on some implementations"
+      zh:
+        - "先枚举服务器允许的认证方式；开启密码认证的机器就重新具备了凭据爆破面"
+        - "留意复用密码与默认口令，以及可达家目录中未设密码的私钥"
+        - "确认 banner 是否暴露精确版本，这直接对应已知 CVE"
+        - "在部分实现上测试通过响应时间差异进行用户名枚举"
+    tools: [ssh-audit, nxc, hydra, ssh-keygen]
+    refs:
+      - "https://www.ssh.com/academy/ssh/config"
+      - "https://attack.mitre.org/techniques/T1021/004/"
+
+  - id: telnet
+    ports: [23, 2323, 8023]
+    service: telnet
+    any_port: true
+    title:
+      en: "Telnet, cleartext remote shell"
+      zh: "Telnet 明文远程 shell"
+    points:
+      en:
+        - "Everything on this wire is cleartext: credentials and session traffic can be read off the segment"
+        - "Try vendor default credentials first; embedded and network devices rarely change them"
+        - "Check for a shell or a management menu that exposes further configuration and file access"
+      zh:
+        - "该协议全程明文：账号口令与会话内容都可在链路上直接读取"
+        - "先试厂商默认口令；嵌入式与网络设备通常不会修改"
+        - "确认是否直接给出 shell 或管理菜单，从而进一步访问配置与文件"
+    tools: [telnet, nc, hydra]
+    refs:
+      - "https://attack.mitre.org/techniques/T1021/"
+
+  - id: rdp
+    ports: [3389, 13389]
+    service: ms-wbt-server
+    any_port: true
+    title:
+      en: "RDP desktop access"
+      zh: "RDP 远程桌面"
+    points:
+      en:
+        - "Confirm whether Network Level Authentication is enforced; without it the login screen is reachable pre-auth"
+        - "Test for credential reuse and for local accounts exposed to the network"
+        - "Check the terminal services event log naming and host certificate to identify the build"
+        - "BlueKeep-class pre-auth bugs appear on unpatched hosts, so version matters"
+      zh:
+        - "确认是否强制网络级认证（NLA）；未强制时登录界面可在认证前访问"
+        - "测试凭据复用，以及暴露在网络上的本地账户"
+        - "通过终端服务证书与事件日志命名判断系统版本"
+        - "未打补丁的主机存在 BlueKeep 类认证前漏洞，因此版本判断很关键"
+    tools: [nxc, xfreerdp, hydra]
+    refs:
+      - "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/welcome-to-rds"
+      - "https://attack.mitre.org/techniques/T1021/001/"
+
+  - id: vnc
+    ports: [5900, 5901, 5902, 5903]
+    service: vnc
+    any_port: true
+    title:
+      en: "VNC remote console"
+      zh: "VNC 远程控制台"
+    points:
+      en:
+        - "VNC authentication is weak by design: an eavesdropped session yields the password"
+        - "Many deployments are configured with no password at all"
+        - "A reached console usually means full desktop control, including keychain and browser data"
+      zh:
+        - "VNC 认证机制本身较弱：会话被监听后即可还原口令"
+        - "大量部署根本没有设置口令"
+        - "拿到控制台通常等于拿到完整桌面，包括钥匙串与浏览器数据"
+    tools: [vncviewer, nxc, hydra]
+    refs:
+      - "https://attack.mitre.org/techniques/T1021/005/"
+
+  - id: winrm
+    ports: [5985, 5986, 47001]
+    service: wsman
+    title:
+      en: "WinRM / PowerShell remoting"
+      zh: "WinRM / PowerShell 远程管理"
+    points:
+      en:
+        - "Valid credentials here give command execution without a full interactive logon"
+        - "Check which accounts are permitted, and whether Basic auth is still enabled on 5985"
+        - "Watch for delegation settings that allow the session to hop to further hosts"
+      zh:
+        - "持有有效凭据即可直接执行命令，无需完整交互式登录"
+        - "确认允许哪些账户，以及 5985 上是否仍启用 Basic 认证"
+        - "留意委派配置，它可能让会话继续跳转到其他主机"
+    tools: [nxc, evil-winrm, pwsh]
+    refs:
+      - "https://learn.microsoft.com/en-us/windows/win32/winrm/portal"
+
+  - id: rservices
+    ports: [512, 513, 514]
+    service: exec
+    title:
+      en: "Legacy r-services (rsh, rexec, rlogin)"
+      zh: "传统 r 服务（rsh、rexec、rlogin）"
+    points:
+      en:
+        - "Trust between hosts is expressed in .rhosts and /etc/hosts.equiv, which is frequently misconfigured"
+        - "These services are cleartext and predate password prompts"
+        - "A writable .rhosts or a wildcard entry is usually enough for a session"
+      zh:
+        - "主机间信任由 .rhosts 与 /etc/hosts.equiv 表达，配置错误极为常见"
+        - "这些服务为明文传输，且早于口令提示机制"
+        - "可写的 .rhosts 或通配条目通常就足以获得会话"
+    tools: [rsh, rlogin, rexec]
+    refs:
+      - "https://www.ietf.org/rfc/rfc1282.txt"
+
+  - id: x11
+    ports: [6000, 6001, 6002]
+    service: x11
+    title:
+      en: "X11 display"
+      zh: "X11 显示服务"
+    points:
+      en:
+        - "Check whether host based access control is disabled, which allows a session without credentials"
+        - "A captured X session exposes keystrokes, screenshots and clipboard content"
+      zh:
+        - "确认是否关闭了基于主机的访问控制，那会导致无需凭据即可连接"
+        - "截获 X 会话可获取键盘输入、屏幕内容与剪贴板数据"
+    tools: [xwininfo, xdotool]
+    refs:
+      - "https://www.x.org/releases/X11R7.7/doc/xorg-docs/secproto/secproto.html"

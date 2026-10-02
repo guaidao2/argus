@@ -1,0 +1,80 @@
+apiVersion: argus.fingerprint/v1
+id: checks-snmp
+description: SNMP default-community checks
+rules:
+  # A default community string is an authentication failure, not a
+  # misconfiguration: everything the agent knows is readable by anyone who can
+  # reach the port, and with the read-write community it can be changed.
+  - id: snmp-default-community
+    description: SNMP is reachable with a default read community
+    kind: check
+    proto: udp
+    ports: [161]
+    probes:
+      - id: sysdescr
+        send: "0)\x02\x01\x00\x04\x06public\xa0\x1c\x02\x04\x01\x02\x03\x04\x02\x01\x00\x02\x01\x000\x0e0\x0c\x06\x08+\x06\x01\x02\x01\x01\x01\x00\x05\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: public-read
+        pattern: '(?s)^\x30[\x00-\xff]{1,2}\x02\x01\x00\x04\x06public\xa2[\x00-\xff]{1,2}\x02\x04.{4}\x02\x01\x00'
+        set: {service: snmp, product: SNMP agent}
+        finding:
+          title:
+            en: 'SNMP answers to the default read community "public"'
+            zh: 'SNMP 响应默认只读团体名 "public"'
+          severity: medium
+          description:
+            en: >-
+              The agent replies to an unauthenticated get-request using the
+              default community string. SNMP read access exposes the interface
+              list, routing table, ARP cache, running processes, installed
+              software and local account names - often enough to plan the next
+              step without sending another packet. Walk it with
+              "snmpwalk -v1 -c public <host> 1.3.6.1.2.1.1" and,
+              for usernames, 1.3.6.1.4.1.77.1.2.25.
+            zh: >-
+              该代理在使用默认团体名、无认证的 get-request 下即作出响应。SNMP 读权限会暴露
+              接口列表、路由表、ARP 缓存、运行中的进程、已安装软件与本地账号名，
+              通常足以在不发第二个包的情况下规划下一步。可用
+              "snmpwalk -v1 -c public <host> 1.3.6.1.2.1.1" 遍历，用户名字段为
+              1.3.6.1.4.1.77.1.2.25。
+          refs:
+            - "https://datatracker.ietf.org/doc/html/rfc1157"
+            - "https://book.hacktricks.xyz/network-services-pentesting/pentesting-snmp"
+
+  - id: snmp-private-community
+    description: SNMP is reachable with the default read-write community
+    kind: check
+    proto: udp
+    ports: [161]
+    probes:
+      - id: sysdescr-private
+        # Same request with the other community string that ships as a default.
+        send: "0)\x02\x01\x00\x04\x07private\xa0\x1c\x02\x04\x01\x02\x03\x04\x02\x01\x00\x02\x01\x000\x0e0\x0c\x06\x08+\x06\x01\x02\x01\x01\x01\x00\x05\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: private-read
+        pattern: '(?s)^\x30[\x00-\xff]{1,2}\x02\x01\x00\x04\x07private\xa2[\x00-\xff]{1,2}\x02\x04.{4}\x02\x01\x00'
+        set: {service: snmp, product: SNMP agent}
+        finding:
+          title:
+            en: 'SNMP answers to the default read-write community "private"'
+            zh: 'SNMP 响应默认读写团体名 "private"'
+          severity: high
+          description:
+            en: >-
+              The agent accepts "private", which is normally the read-write
+              community. This is no longer disclosure: the MIB tree can be
+              written to, which means interface and routing configuration,
+              device names, and on some platforms the configuration file itself
+              can be replaced and the device restarted into it. Do not write
+              anything without written permission; read the tree instead.
+            zh: >-
+              该代理接受 "private"，通常即读写团体名。这已不只是信息泄露：
+              MIB 树可被写入，意味着可修改接口与路由配置、设备名称，
+              在部分平台上还可替换配置文件并重启设备加载它。未获书面授权不要写入，
+              改为只读遍历。
+          refs:
+            - "https://datatracker.ietf.org/doc/html/rfc1157"

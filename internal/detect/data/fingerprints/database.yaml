@@ -1,0 +1,117 @@
+apiVersion: argus.fingerprint/v1
+id: database
+description: Database and cache servers
+rules:
+  - id: mysql-greeting
+    description: MySQL/MariaDB handshake packet
+    ports: [3306, 3307, 33060]
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 2s
+        read_bytes: 1024
+    matches:
+      - id: mariadb
+        pattern: '(?s)^...\x00\x0a[0-9][^\x00]*-MariaDB'
+        set: {service: mysql, product: MariaDB}
+        fields:
+          version: '(?s)^...\x00\x0a([^\x00]{1,32})\x00'
+      - id: mysql
+        pattern: '(?s)^...\x00\x0a[0-9][^\x00]{0,32}\x00'
+        set: {service: mysql, product: MySQL}
+        fields:
+          version: '(?s)^...\x00\x0a([0-9][^\x00]{0,31})\x00'
+      - id: mysql-refused
+        pattern: '(?s)^.{1,4}\xff'
+        set: {service: mysql, info: "server rejected the connection"}
+
+  - id: redis-info
+    description: Redis INFO server
+    ports: [6379, 6380, 16379]
+    probes:
+      - id: info-server
+        send: "INFO server\r\n"
+        read_timeout: 3s
+        read_bytes: 8192
+      - id: ping
+        send: "PING\r\n"
+        read_timeout: 2s
+        read_bytes: 256
+    matches:
+      - id: redis-version
+        pattern: '(?m)^redis_version:(?P<version>[\w.\-]+)'
+        set: {service: redis, product: Redis}
+      - id: redis-mode
+        pattern: '(?m)^redis_mode:(?P<info>[\w\-]+)'
+        set: {service: redis, product: Redis}
+      - id: redis-noauth
+        pattern: '(?i)^-NOAUTH'
+        set: {service: redis, product: Redis, info: "authentication required"}
+      - id: redis-pong
+        pattern: '(?i)^\+PONG'
+        set: {service: redis, product: Redis}
+      - id: redis-error
+        pattern: '(?i)^-ERR'
+        set: {service: redis, product: Redis}
+
+  - id: memcached-version
+    description: Memcached version command
+    ports: [11211, 11212]
+    probes:
+      - id: version-command
+        send: "version\r\n"
+        read_timeout: 2s
+        read_bytes: 512
+    matches:
+      - id: memcached
+        pattern: '(?im)^VERSION (?P<version>[\w.\-]+)'
+        set: {service: memcached, product: memcached}
+      - id: memcached-error
+        pattern: '(?i)^(ERROR|CLIENT_ERROR)'
+        set: {service: memcached, product: memcached}
+
+  - id: mongodb-wire
+    description: MongoDB wire protocol
+    ports: [27017, 27018, 27019]
+    probes:
+      - id: ismaster
+        send: ":\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\xd4\x07\x00\x00\x00\x00\x00\x00admin.$cmd\x00\x00\x00\x00\x00\xff\xff\xff\xff\x13\x00\x00\x00\x10ismaster\x00\x01\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: mongodb
+        pattern: '(?s)ismaster'
+        set: {service: mongodb, product: MongoDB}
+        fields:
+          version: '(?s)version\x00?([0-9]+\.[0-9]+\.[0-9]+)'
+      - id: mongodb-unauthorized
+        pattern: '(?s)unauthorized'
+        set: {service: mongodb, product: MongoDB, info: "authentication required"}
+
+  - id: postgresql-refused
+    description: PostgreSQL startup rejection
+    ports: [5432, 5433]
+    probes:
+      - id: startup
+        send: "\x00\x00\x00\x08\x04\xd2\x16\x2f"
+        read_timeout: 3s
+        read_bytes: 512
+    matches:
+      - id: postgresql
+        pattern: '(?s)\x00'
+        set: {service: postgresql, product: PostgreSQL}
+
+  - id: elasticsearch-http
+    description: Elasticsearch REST root
+    ports: [9200, 9300]
+    tunnel: ""
+    probes:
+      - id: get-root
+        send: "GET / HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}\r\n\r\n"
+        read_timeout: 3s
+    matches:
+      - id: elasticsearch
+        pattern: '(?is)"(?:cluster_name|lucene_version|tagline)"\s*:'
+        set: {service: http, product: Elasticsearch}
+        fields:
+          version: '"number"\s*:\s*"([^"]+)"'

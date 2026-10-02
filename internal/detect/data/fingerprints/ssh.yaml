@@ -1,0 +1,43 @@
+apiVersion: argus.fingerprint/v1
+id: ssh
+description: Secure Shell
+rules:
+  - id: ssh-banner
+    description: SSH protocol banner
+    ports: [22, 222, 2222, 22222, 8022, 10022]
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 2s
+        read_bytes: 512
+    matches:
+      - id: openssh
+        pattern: '^SSH-2\.0-OpenSSH'
+        set: {service: ssh, product: OpenSSH, cpe: "cpe:/a:openbsd:openssh"}
+        fields:
+          version: '^SSH-2\.0-OpenSSH_([^\s\r\n]+)'
+          os: '^SSH-2\.0-OpenSSH_[^\s]+ ([^\r\n]+)'
+      - id: dropbear
+        pattern: '^SSH-2\.0-dropbear'
+        set: {service: ssh, product: Dropbear sshd}
+        fields:
+          version: '^SSH-2\.0-dropbear_([^\s\r\n]+)'
+      - id: libssh
+        pattern: '^SSH-2\.0-libssh'
+        set: {service: ssh, product: libssh}
+        fields:
+          version: '^SSH-2\.0-libssh_([^\s\r\n]+)'
+      - id: cisco-ssh
+        pattern: '^SSH-1\.99-Cisco'
+        set: {service: ssh, product: Cisco SSH}
+        fields:
+          version: '^SSH-1\.99-Cisco-([^\s\r\n]+)'
+      - id: romssh
+        pattern: '^SSH-2\.0-ROSSSH'
+        set: {service: ssh, product: RouterOS sshd}
+      - id: generic-ssh
+        pattern: '^SSH-(?:1\.99|2\.0)-'
+        set: {service: ssh}
+        fields:
+          product: '^SSH-(?:1\.99|2\.0)-([^_\s]+)'
+          version: '^SSH-(?:1\.99|2\.0)-[^_\s]*_?([^\s\r\n]{1,32})'

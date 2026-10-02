@@ -1,0 +1,85 @@
+# Example argus plugin.
+#
+# Validate and register it with:
+#
+#     argus --register-plugin ./examples/example-plugin.yaml
+#     argus --list-plugins
+#     argus -sV --hack-reason -p 9000 127.0.0.1
+#
+# A plugin is data, never code: argus parses this document and nothing else.
+apiVersion: argus.plugin/v1
+name: example-plugin
+version: 1.0.0
+author: guaidao2 & coolmoon
+license: MIT
+argus_min_version: 0.1.0
+description: |
+  Shows the two things a plugin can contribute: a service fingerprint and a
+  hack-reason note. Replace the ports and patterns with your own.
+
+# Optional key/value parameters, usable as {{var:NAME}} inside probe payloads.
+vars:
+  status_path: /status
+
+fingerprints:
+  apiVersion: argus.fingerprint/v1
+  id: example-fingerprints
+  description: Fingerprint a bespoke status endpoint
+  rules:
+    - id: example-status-endpoint
+      description: A JSON status endpoint that identifies its own version
+      # No ports means "try this on every open port", which is how the
+      # built-in generic HTTP rule also works.
+      tunnel: ""
+      probes:
+        - id: get-status
+          description: Fetch the status document
+          send: "GET {{var:status_path}} HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+          read_timeout: 3s
+          read_bytes: 8192
+      matches:
+        # Match sets `service`; the named groups in the pattern become fields.
+        # `fields` entries run over the whole response instead.
+        - id: json-service-block
+          pattern: '(?is)"service"\s*:\s*\{'
+          set:
+            service: example-app
+            product: Example App
+          fields:
+            version: '"version"\s*:\s*"([^"]+)"'
+            info: '"environment"\s*:\s*"([^"]+)"'
+            ostype: '"platform"\s*:\s*"([^"]+)"'
+            cpe: '(cpe:/a:[^"]+)'
+        - id: plain-text-banner
+          pattern: '(?im)^X-Example-Service:\s*(?P<product>[^\r\n]{1,60})'
+          set:
+            service: example-app
+          fields:
+            version: '(?im)^X-Example-Version:\s*([^\r\n]+)'
+
+hack_reasons:
+  apiVersion: argus.hackreason/v1
+  id: example-notes
+  description: Angles worth checking on an example service
+  entries:
+    - id: example-app
+      # Applies to these ports...
+      ports: [9000, 9001]
+      # ...and, because any_port is set, to this service anywhere it runs.
+      service: example-app
+      any_port: true
+      title:
+        en: "Example application service"
+        zh: "示例应用服务"
+      points:
+        en:
+          - "The status document usually reveals the environment, the build and neighbouring service names"
+          - "Check whether the admin endpoint is reachable without credentials"
+          - "Look for a debug or metrics endpoint that should not be exposed"
+        zh:
+          - "状态文档通常会暴露环境、构建信息与相邻服务名"
+          - "确认管理端点是否可在未认证的情况下访问"
+          - "留意不应暴露的调试或指标端点"
+      tools: [curl, jq]
+      refs:
+        - "https://github.com/guaidao2/argus"

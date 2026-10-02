@@ -1,0 +1,242 @@
+apiVersion: argus.hackreason/v1
+id: databases
+description: Database, cache and search engines
+entries:
+  - id: mysql
+    ports: [3306, 3307, 33060]
+    service: mysql
+    any_port: true
+    title:
+      en: "MySQL / MariaDB"
+      zh: "MySQL / MariaDB"
+    points:
+      en:
+        - "Try an empty or default root password before anything else"
+        - "Check FILE privilege: it turns a read query into file read and write on the host"
+        - "Look for LOAD DATA LOCAL INFILE support, which leaks client side files"
+        - "Enumeration is easier with credentials, so hunt for them in reachable config files"
+      zh:
+        - "优先尝试空口令或默认 root 口令"
+        - "确认 FILE 权限：它能把一条查询变成对宿主机的文件读写"
+        - "检查 LOAD DATA LOCAL INFILE 支持，它会导致客户端文件泄露"
+        - "有凭据后枚举会容易得多，因此先在可达配置文件中寻找凭据"
+    tools: [mysql, nxc, hydra]
+    refs:
+      - "https://dev.mysql.com/doc/refman/8.0/en/privileges-provided.html"
+
+  - id: postgresql
+    ports: [5432, 5433]
+    service: postgresql
+    any_port: true
+    title:
+      en: "PostgreSQL"
+      zh: "PostgreSQL"
+    points:
+      en:
+        - "Check pg_hba.conf behaviour: trust authentication allows a session without a password"
+        - "With CREATEROLE or SUPERUSER you can reach the filesystem through COPY TO and large objects"
+        - "Extension directories are writable on some builds, which converts SQL access into code execution"
+      zh:
+        - "确认 pg_hba.conf 的行为：trust 认证无需口令即可建立会话"
+        - "持有 CREATEROLE 或 SUPERUSER 时可通过 COPY TO 与大对象触碰文件系统"
+        - "部分构建中扩展目录可写，能把 SQL 访问转化为代码执行"
+    tools: [psql, nxc, hydra]
+    refs:
+      - "https://www.postgresql.org/docs/current/auth-pg-hba-conf.html"
+
+  - id: mssql
+    ports: [1433, 1434]
+    service: ms-sql-s
+    any_port: true
+    title:
+      en: "Microsoft SQL Server"
+      zh: "Microsoft SQL Server"
+    points:
+      en:
+        - "When xp_cmdshell is enabled, SQL access is direct command execution"
+        - "Even without it, xp_dirtree reaches out over SMB, which harvests a NetNTLM hash"
+        - "Check the sa account and whether the service account holds local admin rights"
+        - "Look for linked servers, which are a common way to move sideways"
+      zh:
+        - "启用 xp_cmdshell 时，SQL 访问即为直接命令执行"
+        - "即使未启用，xp_dirtree 也会发起 SMB 请求，从而捕获 NetNTLM 哈希"
+        - "检查 sa 账户，以及服务账户是否具备本地管理员权限"
+        - "留意链接服务器（linked server），它常被用于横向移动"
+    tools: [impacket-mssqlclient, nxc, sqlcmd]
+    refs:
+      - "https://learn.microsoft.com/en-us/sql/relational-databases/security/"
+
+  - id: oracle
+    ports: [1521, 1522, 5500]
+    service: oracle
+    any_port: true
+    title:
+      en: "Oracle database"
+      zh: "Oracle 数据库"
+    points:
+      en:
+        - "The listener SID is revealed by a status request, which then drives credential attacks"
+        - "Default accounts such as system/manager, scott/tiger and dbsnmp are still found in the wild"
+        - "Check the PL/SQL packages available to the account; several allow filesystem or network access"
+      zh:
+        - "监听器的状态请求会暴露 SID，之后即可据此进行凭据攻击"
+        - "system/manager、scott/tiger、dbsnmp 等默认账户至今仍在野外出现"
+        - "检查账户可用的 PL/SQL 包，其中若干个允许访问文件系统或网络"
+    tools: [odat, sqlplus, tnscmd10g]
+    refs:
+      - "https://www.oracle.com/database/technologies/security.html"
+
+  - id: redis
+    ports: [6379, 6380, 16379]
+    service: redis
+    any_port: true
+    title:
+      en: "Redis"
+      zh: "Redis"
+    points:
+      en:
+        - "An unauthenticated instance is normally an immediate path to the host: RDB export to an SSH key or a module load"
+        - "Check CONFIG GET dir and whether you can write files, and check for protected-mode settings"
+        - "Collected keys often contain session tokens and credentials for other systems"
+        - "Entry is usually derived, so the first goal is unauthenticated access"
+      zh:
+        - "未授权实例通常可直接打通宿主机：通过 RDB 导出写 SSH key 或加载模块"
+        - "检查 CONFIG GET dir 是否允许写文件，并确认 protected-mode 配置"
+        - "其中的键往往包含其他系统的会话令牌与凭据"
+        - "入口通常是派生出来的，首要目标是先拿到未授权访问"
+    tools: [redis-cli, nxc]
+    refs:
+      - "https://redis.io/docs/management/security/"
+
+  - id: mongodb
+    ports: [27017, 27018, 27019]
+    service: mongod
+    any_port: true
+    title:
+      en: "MongoDB"
+      zh: "MongoDB"
+    points:
+      en:
+        - "Pre-3.x deployments frequently ran without authentication; check the version first"
+        - "List databases: application data and sometimes credentials sit in a single collection"
+        - "Check whether the HTTP interface or a Mongo Express front end is exposed nearby"
+      zh:
+        - "3.x 之前的部署经常不启用认证；先确认版本"
+        - "列出数据库：应用数据乃至凭据可能就集中在某个集合里"
+        - "确认附近是否暴露了 HTTP 接口或 Mongo Express 前端"
+    tools: [mongosh, nxc]
+    refs:
+      - "https://www.mongodb.com/docs/manual/security/"
+
+  - id: memcached
+    ports: [11211, 11212]
+    service: memcache
+    any_port: true
+    title:
+      en: "Memcached"
+      zh: "Memcached"
+    points:
+      en:
+        - "There is no authentication: anything in the cache is readable with a single command"
+        - "Dumped slabs routinely contain session identifiers that allow impersonating an application user"
+        - "Also worth checking as an amplification vector during network tests"
+      zh:
+        - "该服务没有认证机制：缓存内容一条命令即可读取"
+        - "导出的 slab 中常含会话标识，可用于冒充应用用户"
+        - "在网络测试中它也是值得关注的放大攻击向量"
+    tools: [nc, memcdump]
+    refs:
+      - "https://memcached.org/"
+
+  - id: elasticsearch
+    ports: [9200, 9300]
+    service: http
+    title:
+      en: "Elasticsearch"
+      zh: "Elasticsearch"
+    points:
+      en:
+        - "An open cluster is readable and writable; the index listing usually names every application behind it"
+        - "Watch for index names that look like credentials, audit trails or logs"
+        - "Mapping a single document reveals far more about the business than the port suggests"
+      zh:
+        - "开放的集群可读可写；索引列表通常能暴露其背后的所有应用"
+        - "留意形似凭据、审计记录或日志的索引名"
+        - "取出一条文档所揭示的业务信息往往远超该端口的字面含义"
+    tools: [curl, nxc]
+    refs:
+      - "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html"
+
+  - id: couchdb
+    ports: [5984]
+    service: couchdb
+    any_port: true
+    title:
+      en: "CouchDB"
+      zh: "CouchDB"
+    points:
+      en:
+        - "Check the admin party state: an unconfigured instance accepts anyone as administrator"
+        - "The _all_dbs endpoint lists every database without credentials in that state"
+        - "Look for the Fauxton administration interface"
+      zh:
+        - "检查 admin party 状态：未配置实例会把任何人当作管理员"
+        - "在该状态下 _all_dbs 端点无需凭据即可列出全部数据库"
+        - "留意 Fauxton 管理界面"
+    tools: [curl]
+    refs:
+      - "https://docs.couchdb.org/en/stable/setup/security.html"
+
+  - id: kafka
+    ports: [9092, 9093]
+    service: kafka
+    any_port: true
+    title:
+      en: "Apache Kafka"
+      zh: "Apache Kafka"
+    points:
+      en:
+        - "Check whether a SASL or PLAINTEXT listener is exposed; PLAINTEXT allows listing topics anonymously"
+        - "Topic contents carry application event streams and often contain credentials"
+      zh:
+        - "确认暴露的是 SASL 还是 PLAINTEXT 监听器；PLAINTEXT 允许匿名列举 topic"
+        - "topic 内容承载应用事件流，其中常包含凭据"
+    tools: [kcat]
+    refs:
+      - "https://kafka.apache.org/documentation/#security"
+
+  - id: zookeeper
+    ports: [2181, 2888, 3888]
+    service: eforward
+    any_port: true
+    title:
+      en: "Apache ZooKeeper"
+      zh: "Apache ZooKeeper"
+    points:
+      en:
+        - "Unauthenticated ZooKeeper exposes its whole configuration tree, including service endpoints"
+        - "The four letter word commands also reveal cluster state and connected clients"
+      zh:
+        - "未授权 ZooKeeper 会暴露整棵配置树，包括服务端点"
+        - "四个字母的命令还可获取集群状态与已连接的客户端"
+    tools: [zkCli, nc]
+    refs:
+      - "https://zookeeper.apache.org/doc/current/zookeeperAdmin.html"
+
+  - id: rabbitmq
+    ports: [5672, 15672, 25672]
+    service: amqp
+    any_port: true
+    title:
+      en: "RabbitMQ"
+      zh: "RabbitMQ"
+    points:
+      en:
+        - "The management interface on 15672 uses guest/guest by default and that account is remote-restricted by default"
+        - "Queues regularly carry credentials for the services that publish into them"
+      zh:
+        - "15672 的管理界面默认使用 guest/guest，但该账户默认限制为本地登录"
+        - "队列中经常承载发布方向下游服务使用的凭据"
+    tools: [curl, rabbitmqadmin]
+    refs:
+      - "https://www.rabbitmq.com/access-control.html"

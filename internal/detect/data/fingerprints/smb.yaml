@@ -1,0 +1,27 @@
+apiVersion: argus.fingerprint/v1
+id: smb
+description: SMB operating system discovery
+rules:
+  - id: smb-os-discovery
+    description: SMB operating system string from a null session
+    ports: [445]
+    probes:
+      # NEGOTIATE followed by SESSION SETUP ANDX in a single write. The two SMB
+      # messages are pipelined the way the FTP check pipelines its commands, so
+      # one probe yields both the dialect and the OS string. The session setup
+      # uses an empty account and the empty-password LM response, which is what
+      # a null session is; a server that requires credentials simply answers
+      # with an error and the match does not fire.
+      - id: negotiate-then-null-session
+        send: "\x00\x00\x00E\xffSMBr\x00\x00\x00\x00\x18S\xc8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xfe\xff\x00\x00\x00\"\x00\x02NT LM 0.12\x00\x02LANMAN1.0\x00\x02LM1.2X002\x00\x00\x00\x00j\xffSMBs\x00\x00\x00\x00\x18\x01@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x0d\xff\x00\x00\x00\xff\xff\x02\x00\x00\x00\x00\x00\x00\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00-\x00\xaa\xd3\xb45\xb5\x14\x04\xee\xaa\xd3\xb45\xb5\x14\x04\xee\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Windows\x00Windows NT\x00"
+        read_timeout: 4s
+        read_bytes: 8192
+    matches:
+      # 0x73 is SESSION SETUP ANDX and the status word is zero: the session was
+      # accepted, so the byte area carries NativeOS / NativeLanMan.
+      - id: os-string
+        pattern: '(?s)\xffSMB\x73\x00\x00\x00\x00'
+        set: {service: microsoft-ds, product: SMB}
+        fields:
+          ostype: 'Windows ([0-9][0-9.]*)'
+          info: '(Samba [^\x00]{1,40})'

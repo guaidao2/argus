@@ -1,0 +1,125 @@
+apiVersion: argus.fingerprint/v1
+id: mail
+description: SMTP, POP3 and IMAP servers
+rules:
+  - id: smtp-banner
+    description: SMTP greeting
+    ports: [25, 587, 2525, 1025, 1026, 1027]
+    tunnel: ""
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+        read_bytes: 1024
+    matches:
+      - id: postfix
+        pattern: '(?i)ESMTP Postfix'
+        set: {service: smtp, product: Postfix smtpd}
+      - id: exim
+        pattern: '(?i)ESMTP Exim'
+        set: {service: smtp, product: Exim smtpd}
+        fields:
+          version: '(?i)Exim ([^\s\r\n]+)'
+      - id: sendmail
+        pattern: '(?i)Sendmail'
+        set: {service: smtp, product: Sendmail}
+        fields:
+          version: '(?i)Sendmail[ /]([^\s\r\n]+)'
+      - id: microsoft-smtp
+        pattern: '(?i)Microsoft ESMTP MAIL'
+        set: {service: smtp, product: Microsoft ESMTP, ostype: Windows}
+      - id: exchange
+        pattern: '(?i)Microsoft Exchange'
+        set: {service: smtp, product: Microsoft Exchange, ostype: Windows}
+      - id: haraka
+        pattern: '(?i)Haraka'
+        set: {service: smtp, product: Haraka}
+      - id: generic-smtp
+        pattern: '^220[-\s]'
+        set: {service: smtp}
+        fields:
+          info: '^220[ -](.{1,100})'
+
+  - id: smtps-banner
+    description: SMTP over TLS
+    ports: [465]
+    tunnel: ssl
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+    matches:
+      - id: generic-smtps
+        pattern: '^220[-\s]'
+        set: {service: smtp}
+
+  - id: pop3-banner
+    description: POP3 greeting
+    ports: [110]
+    tunnel: ""
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+    matches:
+      - id: dovecot-pop3
+        pattern: '(?i)^\+OK.*Dovecot'
+        set: {service: pop3, product: Dovecot pop3d}
+      - id: courier-pop3
+        pattern: '(?i)Courier'
+        set: {service: pop3, product: Courier pop3d}
+      - id: exchange-pop3
+        pattern: '(?i)Microsoft Exchange'
+        set: {service: pop3, product: Microsoft Exchange, ostype: Windows}
+      - id: generic-pop3
+        pattern: '(?i)^\+OK'
+        set: {service: pop3}
+        fields:
+          info: '^\+OK[- ]?(.{1,100})'
+
+  - id: pop3s-banner
+    description: POP3 over TLS
+    ports: [995]
+    tunnel: ssl
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+    matches:
+      - id: generic-pop3s
+        pattern: '(?i)^\+OK'
+        set: {service: pop3}
+
+  - id: imap-banner
+    description: IMAP greeting
+    ports: [143]
+    tunnel: ""
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+    matches:
+      - id: dovecot-imap
+        pattern: '(?i)^\* OK.*Dovecot'
+        set: {service: imap, product: Dovecot imapd}
+      - id: exchange-imap
+        pattern: '(?i)Microsoft Exchange'
+        set: {service: imap, product: Microsoft Exchange, ostype: Windows}
+      - id: generic-imap
+        pattern: '(?i)^\* OK'
+        set: {service: imap}
+        fields:
+          info: '^\* OK[- ]?(.{1,100})'
+
+  - id: imaps-banner
+    description: IMAP over TLS
+    ports: [993]
+    tunnel: ssl
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+    matches:
+      - id: generic-imaps
+        pattern: '(?i)^\* OK'
+        set: {service: imap}

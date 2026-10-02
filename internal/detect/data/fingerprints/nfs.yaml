@@ -1,0 +1,81 @@
+apiVersion: argus.fingerprint/v1
+id: nfs
+description: |
+  NFS itself, on the port it always uses. The export list - the part that
+  actually decides whether a host is interesting - is not reachable in one call,
+  and the note at the bottom of this file explains why.
+
+  A NULL procedure (procedure 0) is the cheapest way to ask "are you an RPC
+  service, and which version do you speak": it takes no arguments, does nothing,
+  and any RPC service answers it. That is also why the answer has to be matched
+  carefully rather than trusted - every RPC service replies to it.
+rules:
+  - id: nfs-null
+    description: NFS on its well-known port
+    ports: [2049]
+    probes:
+      - id: null-v3
+        # RPC CALL: xid 4, CALL, rpcvers 2, program 100003 (NFS), version 3,
+        # procedure 0 (NULL), AUTH_NULL credentials and verifier. Prefixed with
+        # the record marker 0x80000028 = last fragment, 40 bytes.
+        send: "\x80\x00\x00(\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa3\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: nfs-v3-ok
+        # A reply to xid 4 that is a REPLY, was accepted, and reports SUCCESS.
+        # A port answering something else to this call is not NFSv3. Not
+        # anchored to the start of the buffer: the reply carries its own record
+        # marker, so the xid sits four bytes in.
+        pattern: '(?s)\x00\x00\x00\x04\x00\x00\x00\x01\x00\x00\x00\x00'
+        set:
+          service: nfs
+          product: NFS
+          version: "3"
+          cpe: cpe:/a:linux-nfs:linux-nfs
+        fields:
+          info: 'NFSv3'
+
+  - id: nfs-null-v4
+    description: NFSv4 on its well-known port
+    ports: [2049]
+    probes:
+      - id: null-v4
+        # Same NULL call against version 4.
+        send: "\x80\x00\x00(\x00\x00\x00\x05\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa3\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: nfs-v4-ok
+        pattern: '(?s)\x00\x00\x00\x05\x00\x00\x00\x01\x00\x00\x00\x00'
+        set:
+          service: nfs
+          product: NFS
+          version: "4"
+          cpe: cpe:/a:linux-nfs:linux-nfs
+        fields:
+          info: 'NFSv4'
+
+# Why the export list is not here
+#
+# "showmount -e" reads the export list from mountd, not from NFS, and mountd
+# listens on a port the kernel picks at boot. Getting the list therefore takes
+# two calls: a DUMP to the portmapper (port 111, see rpc.yaml) to learn mountd's
+# port, then EXPORTALL to that port. A rule cannot express that, because a rule's
+# probes are independent and nothing carries a value from one to the next.
+#
+# Two candidates for doing it in one call were measured against a real rpcbind
+# and a real mountd, and neither works:
+#
+#   - NFS's own EXPORT procedure (program 100003, procedure 5). Linux's nfsd
+#     answers it with nfsstat3 = 4 (ERR_NXIO). It is not implemented there.
+#   - The portmapper's CALLIT procedure (program 100000, procedure 5), which
+#     asks rpcbind to make the call on your behalf. Modern rpcbind disables it;
+#     it timed out over both TCP and UDP.
+#
+# So argus reports that NFS and mountd are registered (checks/rpc.yaml, one DUMP
+# call, every service named) and leaves the second step to showmount. That is the
+# same division nmap draws: its rpcinfo script reports the registry, and its
+# nfs-showmount script does the extra call, which it can only do because NSE is a
+# scripting language. argus rules are data, not code, and that is deliberate -
+# no plugin it loads can execute anything.

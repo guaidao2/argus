@@ -1,0 +1,95 @@
+apiVersion: argus.fingerprint/v1
+id: checks-versions
+description: |
+  Version-following checks. A large share of real findings are "the version in
+  the banner falls inside this range", which needs no protocol state at all -
+  just a version comparison. Every finding here is worded as a version match
+  rather than a confirmation, because distributions routinely backport security
+  fixes without changing the version string.
+rules:
+  - id: openssh-regresshion-range
+    description: OpenSSH version inside the CVE-2024-6387 range
+    kind: check
+    ports: [22, 222, 2222, 22222, 8022, 10022]
+    service: ssh
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+        read_bytes: 512
+    matches:
+      - id: affected-range
+        pattern: '(?im)^SSH-2\.0-OpenSSH_'
+        fields:
+          version: '(?im)^SSH-2\.0-[Oo]penSSH_([0-9][^\s\r\n]*)'
+        affected:
+          range: ">=8.5p1 <9.8"
+        finding:
+          title:
+            en: "OpenSSH: version in the CVE-2024-6387 (regreSSHion) range"
+            zh: "OpenSSH：版本落在 CVE-2024-6387（regreSSHion）影响区间"
+          severity: medium
+          description:
+            en: "The banner reports an OpenSSH version between 8.5p1 and 9.7p1, the range affected by CVE-2024-6387 (regreSSHion). This is a version match, not a confirmation: distributions routinely backport the fix without changing the version string, so confirm before it goes into a report."
+            zh: "banner 报告的 OpenSSH 版本位于 8.5p1 至 9.7p1 之间，即 CVE-2024-6387（regreSSHion）的影响区间。这是版本匹配而非确认：发行版通常以 backport 方式修补而不改动版本号，写入报告前请先核实。"
+          refs:
+            - "https://nvd.nist.gov/vuln/detail/CVE-2024-6387"
+            - "https://www.qualys.com/2024/07/01/cve-2024-6387/regresshion.txt"
+
+  - id: vsftpd-backdoored-version
+    description: vsftpd version with the CVE-2011-2523 backdoor
+    kind: check
+    ports: [21, 2100, 2021, 2121]
+    service: ftp
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+        read_bytes: 512
+    matches:
+      - id: backdoored
+        # The pattern only pulls the version out; the verdict comes from the
+        # range below, which is the whole point of a version-following check.
+        pattern: '(?i)vsftpd'
+        fields:
+          version: '(?i)vsftpd[ /]([0-9][^\s\r\n\)]*)'
+        affected:
+          range: "==2.3.4"
+        finding:
+          title:
+            en: "vsftpd 2.3.4: version carrying the CVE-2011-2523 backdoor"
+            zh: "vsftpd 2.3.4：携带 CVE-2011-2523 后门的版本"
+          severity: high
+          description:
+            en: "The released vsftpd 2.3.4 source carries a backdoor: a username ending in ':)' opens a root shell on port 6200. Confirm the version is genuinely 2.3.4 before treating it as exploitable, since a locally built tree may have been cleaned."
+            zh: "官方发布的 vsftpd 2.3.4 源码包被植入后门：以 ':)' 结尾的用户名会在 6200 端口打开一个 root shell。请先确认版本确实为 2.3.4（本地自行清理过的源码树可能已不含后门），再按可利用处理。"
+          refs:
+            - "https://nvd.nist.gov/vuln/detail/CVE-2011-2523"
+
+  - id: proftpd-backdoored-version
+    description: ProFTPD version from the compromised 1.3.5 release
+    kind: check
+    ports: [21, 2100, 2021, 2121]
+    service: ftp
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 3s
+        read_bytes: 512
+    matches:
+      - id: backdoored
+        pattern: '(?i)ProFTPD'
+        fields:
+          version: '(?i)ProFTPD[ /]([0-9][^\s\r\n\)]*)'
+        affected:
+          range: ">=1.3.5 <1.3.6"
+        finding:
+          title:
+            en: "ProFTPD 1.3.5: version from the compromised release archive"
+            zh: "ProFTPD 1.3.5：来自被篡改发行包的版本"
+          severity: medium
+          description:
+            en: "The 1.3.5 source archive distributed in 2010 carried a backdoor. A distribution packaged copy, or one built from a clean tree, is not affected, so treat this as a version match that needs confirming rather than a confirmed backdoor."
+            zh: "2010 年分发的 1.3.5 源码包被植入后门。由发行版打包、或从干净源码树构建的副本并不受影响，因此请把它当作需要核实的版本匹配，而不是已确认的后门。"
+          refs:
+            - "https://nvd.nist.gov/vuln/detail/CVE-2010-4652"

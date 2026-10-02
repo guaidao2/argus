@@ -1,0 +1,28 @@
+apiVersion: argus.fingerprint/v1
+id: checks-elasticsearch
+description: Elasticsearch exposure checks
+rules:
+  - id: elasticsearch-unauth
+    description: Elasticsearch index list is readable without credentials
+    kind: check
+    ports: [9200, 9201, 9202]
+    probes:
+      - id: cat-indices
+        send: "GET /_cat/indices?format=json HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\nAccept: application/json\r\n\r\n"
+        read_timeout: 4s
+        read_bytes: 16384
+    matches:
+      # 200 alone proves nothing; an unauthenticated index listing does.
+      - id: unauth
+        pattern: '(?is)^HTTP/1\.[01] 200\b.*"index"\s*:'
+        set: {service: http, product: Elasticsearch}
+        finding:
+          title:
+            en: "Elasticsearch: unauthenticated index access"
+            zh: "Elasticsearch：未授权访问索引"
+          severity: high
+          description:
+            en: "The index listing was returned without credentials. Index names and their contents are usually readable and writable from here."
+            zh: "未使用凭据即返回了索引列表。通常从这里既可读也可写索引名及其内容。"
+          refs:
+            - "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html"

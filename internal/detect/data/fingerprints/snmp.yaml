@@ -1,0 +1,42 @@
+apiVersion: argus.fingerprint/v1
+id: snmp
+description: |
+  SNMP is the highest-value datagram service on a network and the one most often
+  left with its default community string. A single get-request answers with
+  sysDescr, which names the operating system and its version.
+
+  This is why service detection speaks UDP at all; the rules carry proto: udp
+  and the detector hands them to the datagram side of a port.
+rules:
+  - id: snmp-public
+    description: SNMP agent answering the default community string "public"
+    proto: udp
+    ports: [161]
+    probes:
+      - id: sysdescr
+        # SNMPv1 get-request for sysDescr.0 (1.3.6.1.2.1.1.1.0), community
+        # "public".
+        #
+        # The OID has to be the full one. Asking for its prefix 1.3.6.1.2.1
+        # answers noSuchName, which still proves the community string is
+        # accepted but carries no information - and sysDescr is the whole point:
+        # it usually names the operating system and its version. The bytes were
+        # checked against what net-snmp's snmpget puts on the wire.
+        send: "0)\x02\x01\x00\x04\x06public\xa0\x1c\x02\x04\x01\x02\x03\x04\x02\x01\x00\x02\x01\x000\x0e0\x0c\x06\x08+\x06\x01\x02\x01\x01\x01\x00\x05\x00"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      - id: snmp-v1-public
+        # A GetResponse PDU (context tag 0xa2) that echoes the community and
+        # then reports error-status 0. A wrong community is dropped silently
+        # rather than answered, and a wrong OID comes back with error-status 2,
+        # so this shape means the request was understood and satisfied.
+        pattern: '(?s)^\x30[\x00-\xff]{1,2}\x02\x01\x00\x04\x06public\xa2[\x00-\xff]{1,2}\x02\x04.{4}\x02\x01\x00'
+        set:
+          service: snmp
+          product: SNMP agent
+          cpe: cpe:/a:net-snmp:net-snmp
+        fields:
+          # The OCTET STRING following the sysDescr.0 OID: one or two length
+          # bytes, short form below 128 bytes and long form above.
+          info: '(?s)\x06\x08\x2b\x06\x01\x02\x01\x01\x01\x00\x04(?:\x81|\x82)?[\x00-\x7f]([ -~]{8,200})'

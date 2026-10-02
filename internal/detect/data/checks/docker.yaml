@@ -1,0 +1,76 @@
+apiVersion: argus.fingerprint/v1
+id: checks-docker
+description: Container platform exposure checks
+rules:
+  - id: docker-api-unauth
+    description: Docker daemon API reachable without authentication
+    kind: check
+    ports: [2375, 4243]
+    probes:
+      - id: version
+        send: "GET /version HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\nAccept: application/json\r\n\r\n"
+        read_timeout: 4s
+        read_bytes: 8192
+    matches:
+      - id: unauth
+        pattern: '(?is)^HTTP/1\.[01] 200\b.*"ApiVersion"\s*:'
+        set: {service: http, product: Docker Engine API}
+        finding:
+          title:
+            en: "Docker API: unauthenticated access"
+            zh: "Docker API：未授权访问"
+          severity: critical
+          description:
+            en: "The daemon API answered without credentials. In this state it can start a container with the host filesystem mounted, which is equivalent to root on the host."
+            zh: "守护进程 API 在无凭据情况下作出了响应。此状态下可启动一个挂载宿主文件系统的容器，等价于宿主机 root。"
+          refs:
+            - "https://docs.docker.com/engine/security/protect-access/"
+
+  - id: kubelet-unauth
+    description: kubelet API lists pods without authentication
+    kind: check
+    ports: [10250, 10255]
+    probes:
+      - id: list-pods
+        send: "GET /pods HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\n\r\n"
+        read_timeout: 4s
+        read_bytes: 16384
+    matches:
+      - id: unauth
+        pattern: '(?is)^HTTP/1\.[01] 200\b.*"kind"\s*:\s*"PodList"'
+        set: {service: http, product: kubelet}
+        finding:
+          title:
+            en: "kubelet API: unauthenticated pod listing"
+            zh: "kubelet API：未授权列出 Pod"
+          severity: critical
+          description:
+            en: "The kubelet answered a pod listing without credentials. Its exec and log endpoints are usually reachable too, which allows command execution inside pods."
+            zh: "kubelet 在无凭据情况下返回了 Pod 列表。其 exec 与 log 端点通常同样可达，从而可在 Pod 内执行命令。"
+          refs:
+            - "https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet-authentication-authorization/"
+
+  - id: kubernetes-api-unauth
+    description: Kubernetes API server lists pods anonymously
+    kind: check
+    ports: [6443, 8443, 6444]
+    tunnel: ssl
+    probes:
+      - id: list-pods
+        send: "GET /api/v1/pods HTTP/1.0\r\nHost: {{host}}\r\nUser-Agent: {{agent}}/{{argus_version}}\r\n\r\n"
+        read_timeout: 4s
+        read_bytes: 16384
+    matches:
+      - id: anon-list
+        pattern: '(?is)^HTTP/1\.[01] 200\b.*"kind"\s*:\s*"PodList"'
+        set: {service: http, product: Kubernetes API}
+        finding:
+          title:
+            en: "Kubernetes API: anonymous pod listing"
+            zh: "Kubernetes API：匿名列出 Pod"
+          severity: high
+          description:
+            en: "An unauthenticated request listed pods. Anonymous access normally only reaches version information, so this indicates over-permissive RBAC."
+            zh: "未认证请求即可列出 Pod。匿名访问通常只能读取版本信息，出现这种情况说明 RBAC 授权过宽。"
+          refs:
+            - "https://kubernetes.io/docs/concepts/security/rbac-good-practices/"

@@ -1,0 +1,66 @@
+# GoReleaser configuration for argus.
+#
+# The binary is fully static (CGO_ENABLED=0) so every target is a single file
+# the user can drop anywhere: no libpcap, no Npcap, no runtime to install.
+version: 2
+
+project_name: argus
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - id: argus
+    main: ./cmd/argus
+    binary: argus
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/guaidao2/argus/internal/version.Version={{.Version}}
+      - -X github.com/guaidao2/argus/internal/version.Commit={{.Commit}}
+      - -X github.com/guaidao2/argus/internal/version.Date={{.Date}}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+      - 386
+    ignore:
+      - goos: darwin
+        goarch: "386"
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - README.zh-CN.md
+      - examples/**
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: true

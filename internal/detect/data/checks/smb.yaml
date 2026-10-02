@@ -1,0 +1,97 @@
+apiVersion: argus.fingerprint/v1
+id: checks-smb
+description: SMB protocol hardening checks
+rules:
+  - id: smb-v1-enabled
+    description: The server negotiates an SMBv1 dialect
+    kind: check
+    ports: [445]
+    service: microsoft-ds
+    probes:
+      # SMBv1 NEGOTIATE PROTOCOL (MS-SMB 2.2.4.52.1) wrapped in a NetBIOS
+      # session header, offering only SMBv1 dialects. The response is SMBv1
+      # shaped whatever the server supports, so the dialect index it picks is
+      # what carries the answer.
+      - id: negotiate-v1
+        send: "\x00\x00\x00E\xffSMBr\x00\x00\x00\x00\x18S\xc8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xfe\xff\x00\x00\x00\"\x00\x02NT LM 0.12\x00\x02LANMAN1.0\x00\x02LM1.2X002\x00"
+        read_timeout: 3s
+        read_bytes: 1024
+    matches:
+      # NetBIOS header, \xffSMB NEGOTIATE, NT_STATUS_SUCCESS, then the fixed
+      # 23 byte tail up to WordCount (0x11), then a DialectIndex below 6. An
+      # index of 0xffff means "no dialect in common", which is what a server
+      # with SMBv1 switched off answers.
+      - id: v1-accepted
+        pattern: '(?s)^....\xffSMB\x72\x00\x00\x00\x00.{23}\x11[\x00-\x05]'
+        set: {service: microsoft-ds, product: SMB}
+        finding:
+          title:
+            en: "SMB: SMBv1 is enabled"
+            zh: "SMB：启用了 SMBv1"
+          severity: medium
+          description:
+            en: "The server negotiated an SMBv1 dialect. SMBv1 is deprecated and is a precondition for the MS17-010 family, but patching MS17-010 does NOT disable SMBv1, so a fully patched host still answers exactly like this. Treat this as a hardening finding, not as evidence of MS17-010."
+            zh: "服务器协商出了 SMBv1 方言。SMBv1 已被废弃，且是 MS17-010 系列漏洞的必要前提；但修补 MS17-010 并不会关闭 SMBv1，因此完全打过补丁的主机同样会有这样的响应。请把它当作加固建议，而不是 MS17-010 的证据。"
+          refs:
+            - "https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3"
+
+  - id: smb-signing-not-required
+    description: The server does not require SMB message signing
+    kind: check
+    ports: [445]
+    service: microsoft-ds
+    probes:
+      - id: negotiate-v1
+        send: "\x00\x00\x00E\xffSMBr\x00\x00\x00\x00\x18S\xc8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xfe\xff\x00\x00\x00\"\x00\x02NT LM 0.12\x00\x02LANMAN1.0\x00\x02LM1.2X002\x00"
+        read_timeout: 3s
+        read_bytes: 1024
+    matches:
+      # SecurityMode is the byte after DialectIndex; bit 0x08 is
+      # "signing required". A value below 8 has that bit clear.
+      - id: not-required
+        pattern: '(?s)^....\xffSMB\x72\x00\x00\x00\x00.{23}\x11.{2}[\x00-\x07]'
+        set: {service: microsoft-ds, product: SMB}
+        finding:
+          title:
+            en: "SMB: message signing is not required"
+            zh: "SMB：未强制消息签名"
+          severity: medium
+          description:
+            en: "The server does not require SMB signing. An attacker able to relay authentication can then forward a captured session to this host, which is the usual path from a single foothold to a domain controller."
+            zh: "服务器未强制 SMB 签名。能够中继认证的攻击者可以把截获的会话转发到该主机，这通常是从一个落脚点走向域控的路径。"
+          refs:
+            - "https://learn.microsoft.com/en-us/windows-server/storage/file-server/smb-signing"
+
+  - id: smb1-legacy-windows-family
+    description: SMBv1 on a Windows version in the family MS17-010 targets
+    kind: check
+    ports: [445]
+    service: microsoft-ds
+    probes:
+      - id: negotiate-then-null-session
+        send: "\x00\x00\x00E\xffSMBr\x00\x00\x00\x00\x18S\xc8\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xfe\xff\x00\x00\x00\"\x00\x02NT LM 0.12\x00\x02LANMAN1.0\x00\x02LM1.2X002\x00\x00\x00\x00j\xffSMBs\x00\x00\x00\x00\x18\x01@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x0d\xff\x00\x00\x00\xff\xff\x02\x00\x00\x00\x00\x00\x00\x00\x18\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00-\x00\xaa\xd3\xb45\xb5\x14\x04\xee\xaa\xd3\xb45\xb5\x14\x04\xee\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00Windows\x00Windows NT\x00"
+        read_timeout: 4s
+        read_bytes: 8192
+    matches:
+      # The intersection is the point: an accepted SMBv1 session AND a Windows
+      # kernel version in the vulnerable family. Either signal alone would be
+      # noise; together they are a candidate worth confirming.
+      - id: candidate
+        pattern: '(?s)\xffSMB\x73\x00\x00\x00\x00'
+        set: {service: microsoft-ds, product: SMB}
+        fields:
+          os_version: 'Windows ([0-9][0-9.]*)'
+        affected:
+          - field: os_version
+            range: ">=5.0 <6.2"
+        finding:
+          title:
+            en: "SMB: SMBv1 with a Windows version in the MS17-010 family"
+            zh: "SMB：SMBv1 且 Windows 版本属于 MS17-010 家族"
+          severity: medium
+          description:
+            en: "The host answered SMBv1 and reported a Windows kernel version between 5.0 and 6.1 (2000 through 7 / Server 2008 R2), the family EternalBlue-style MS17-010 exploitation targets. This is an intersection of two observations, not a confirmation: patching does not change the kernel version, so a fully patched host looks identical. Use nmap's smb-vuln-ms17-010 or Metasploit to confirm."
+            zh: "主机以 SMBv1 应答，且报告的 Windows 内核版本位于 5.0 至 6.1 之间（2000 到 7 / Server 2008 R2），即 EternalBlue 一类 MS17-010 利用所针对的家族。这是两个观察结果的交集，不是确认：打补丁不会改变内核版本号，已完全修补的主机看起来完全一样。请用 nmap 的 smb-vuln-ms17-010 或 Metasploit 确认。"
+          refs:
+            - "https://nvd.nist.gov/vuln/detail/CVE-2017-0144"
+            - "https://learn.microsoft.com/en-us/security-updates/securitybulletins/2017/ms17-010"

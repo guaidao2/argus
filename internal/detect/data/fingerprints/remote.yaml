@@ -1,0 +1,66 @@
+apiVersion: argus.fingerprint/v1
+id: remote
+description: Remote access, terminal services and virtual consoles
+rules:
+  - id: telnet-negotiation
+    description: Telnet IAC negotiation
+    ports: [23, 2323, 5023]
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 2s
+        read_bytes: 512
+    matches:
+      - id: telnet-iac
+        pattern: '^[\xff\xfe][\x00-\xff]'
+        set: {service: telnet}
+      - id: telnet-text
+        pattern: '^[\x20-\x7e\r\n\t]{4,}'
+        set: {service: telnet}
+        fields:
+          info: '^([^\r\n]{4,100})'
+
+  - id: vnc-banner
+    description: RFB protocol version
+    ports: [5900, 5901, 5902, 5903, 5904, 5905, 5906, 5907, 5908, 5909, 5910]
+    probes:
+      - id: banner
+        send: ""
+        read_timeout: 2s
+        read_bytes: 128
+    matches:
+      - id: rfb
+        pattern: '^RFB (?P<version>\d{3}\.\d{3})'
+        set: {service: vnc, product: VNC}
+      - id: rfb-apple
+        pattern: '^RFB (?P<version>\d{3}\.\d{3})'
+        set: {service: vnc, product: Apple Remote Desktop}
+
+  - id: rdp-negotiation
+    description: RDP negotiation response
+    ports: [3389, 13389]
+    probes:
+      - id: x224-connect
+        send: "\x03\x00\x00\x13\x0e\xe0\x00\x00\x00\x00\x00\x01\x00\x08\x00\x03\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 256
+    matches:
+      - id: rdp
+        pattern: '^\x03\x00'
+        set: {service: ms-wbt-server, product: Microsoft Terminal Services, ostype: Windows}
+
+  - id: x11
+    description: X11 display
+    ports: [6000, 6001, 6002, 6003, 6004, 6005]
+    probes:
+      - id: x11-setup
+        send: "l\x00\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 2s
+        read_bytes: 512
+    matches:
+      - id: x11
+        pattern: '^\x01\x00\x0b\x00'
+        set: {service: x11, product: X11}
+      - id: x11-failed
+        pattern: '^\x00\x00\x0b\x00'
+        set: {service: x11, product: X11, info: "connection refused by server"}

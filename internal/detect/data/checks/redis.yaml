@@ -1,0 +1,44 @@
+apiVersion: argus.fingerprint/v1
+id: checks-redis
+description: Redis exposure checks
+rules:
+  - id: redis-unauth
+    description: Redis answers INFO without authentication
+    kind: check
+    ports: [6379, 6380, 16379, 16380]
+    service: redis
+    probes:
+      - id: info-server
+        send: "INFO server\r\n"
+        read_timeout: 3s
+        read_bytes: 4096
+    matches:
+      # A protected instance answers "-NOAUTH Authentication required.", which
+      # does not reach this pattern. Only a successful INFO does.
+      - id: unauth
+        pattern: '(?m)^redis_version:'
+        set: {service: redis, product: Redis}
+        finding:
+          title:
+            en: "Redis: unauthenticated access"
+            zh: "Redis：未授权访问"
+          severity: high
+          description:
+            en: "The server answered INFO without credentials, so any client that can reach the port can read its configuration and keys."
+            zh: "服务器在无凭据情况下响应了 INFO，任何能访问该端口的客户端都可读取其配置与键值。"
+          refs:
+            - "https://redis.io/docs/latest/operate/oss_and_stack/management/security/"
+
+  - id: redis-protected
+    description: Redis requires authentication (an identification, not a finding)
+    ports: [6379, 6380, 16379, 16380]
+    service: redis
+    probes:
+      - id: ping
+        send: "PING\r\n"
+        read_timeout: 2s
+        read_bytes: 256
+    matches:
+      - id: noauth
+        pattern: '(?m)^-NOAUTH'
+        set: {service: redis, product: Redis, info: "authentication required"}

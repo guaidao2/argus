@@ -1,0 +1,35 @@
+apiVersion: argus.fingerprint/v1
+id: checks-ftp
+description: FTP authentication checks
+rules:
+  - id: ftp-anonymous
+    description: FTP accepts an anonymous login
+    kind: check
+    ports: [21, 2100, 2021, 2121]
+    service: ftp
+    probes:
+      # FTP answers each command line independently, so both commands can be
+      # pipelined into one write and read back as a single response. That keeps
+      # this check to a single connection, which is all a declarative probe can
+      # do.
+      - id: anonymous-login
+        send: "USER anonymous\r\nPASS anonymous@example.com\r\n"
+        read_timeout: 4s
+        read_bytes: 2048
+    matches:
+      # The 331 must be followed by the 230: it is the answer to *our* PASS,
+      # not a stale banner from a server that refused the login.
+      - id: anon-ok
+        pattern: '(?s)331 [^\r\n]*\r\n230 '
+        set: {service: ftp, product: FTP}
+        finding:
+          title:
+            en: "FTP: anonymous login accepted"
+            zh: "FTP：接受匿名登录"
+          severity: high
+          description:
+            en: "The server accepted the login anonymous / anonymous@example.com. Anonymous access usually means the file tree is readable, and very often writable as well."
+            zh: "服务器接受了 anonymous / anonymous@example.com 登录。匿名访问通常意味着文件树可读，而且常常同时可写。"
+          refs:
+            - "https://attack.mitre.org/techniques/T1078/001/"
+            - "https://www.ietf.org/rfc/rfc2577.txt"

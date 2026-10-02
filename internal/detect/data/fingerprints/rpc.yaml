@@ -1,0 +1,56 @@
+apiVersion: argus.fingerprint/v1
+id: rpc
+description: |
+  ONC RPC (Sun RPC) services register themselves with a portmapper, and the
+  portmapper will list them to anyone who asks. That makes rpcbind the single
+  most useful port on a host that runs it: the services it names are frequently
+  on high, unpredictable ports that no port table can reach.
+
+  The list comes from one call, DUMP, which is what "rpcinfo -p" uses. Two
+  details were measured against a real rpcbind rather than assumed:
+
+    - DUMP is procedure 4. Procedure 3 is the older portmapper's DUMP, and a
+      modern rpcbind answers it with SUCCESS and an empty list, which looks like
+      a working probe that found nothing.
+    - Over TCP the call is prefixed with an ONC record marker, a 4-byte header
+      whose top bit marks the last fragment; over UDP there is no marker.
+rules:
+  - id: rpcbind-tcp
+    description: ONC RPC portmapper (rpcbind) over TCP
+    ports: [111]
+    probes:
+      - id: dump
+        # RPC CALL: xid 1, CALL, rpcvers 2, program 100000, version 2,
+        # procedure 4 (DUMP), AUTH_NULL credentials and verifier. Prefixed with
+        # the record marker 0x80000028 = last fragment, 40 bytes.
+        send: "\x80\x00\x00(\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa0\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 8192
+    matches:
+      - id: rpcbind
+        # A first list entry of "more entries follow" followed by program 100000:
+        # rpcbind always registers itself, so this is the shape of a DUMP that
+        # actually returned something.
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xa0'
+        set:
+          service: rpcbind
+          product: ONC RPC portmapper
+          cpe: cpe:/a:rpcbind_project:rpcbind
+
+  - id: rpcbind-udp
+    description: ONC RPC portmapper (rpcbind) over UDP
+    proto: udp
+    ports: [111]
+    probes:
+      - id: dump
+        # The same call without the record marker, which only TCP uses.
+        send: "\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x01\x86\xa0\x00\x00\x00\x02\x00\x00\x00\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        read_timeout: 3s
+        read_bytes: 8192
+    matches:
+      - id: rpcbind
+        pattern: '(?s)\x00\x00\x00\x01\x00\x01\x86\xa0'
+        set:
+          service: rpcbind
+          product: ONC RPC portmapper
+          cpe: cpe:/a:rpcbind_project:rpcbind
