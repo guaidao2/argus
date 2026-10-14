@@ -69,7 +69,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The notes are the commits since the previous tag: this repository
+          # releases from main, so there are no pull requests for GitHub to
+          # summarise, and a bare "Full Changelog" line tells a reader nothing
+          # about what changed.
+          prev="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          {
+            echo "argus ${GITHUB_REF_NAME#v}"
+            echo
+            if [ -n "$prev" ]; then
+              echo "Changes since \`$prev\`:"
+              echo
+              git log --no-merges --pretty='* %s' "$prev..$GITHUB_REF_NAME"
+              echo
+              echo "**Full changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$GITHUB_REF_NAME"
+            else
+              echo "Changes:"
+              echo
+              git log --no-merges --pretty='* %s' "$GITHUB_REF_NAME"
+            fi
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
           gh release create "$GITHUB_REF_NAME" \
             --title "argus ${GITHUB_REF_NAME#v}" \
-            --generate-notes \
+            --notes-file RELEASE_NOTES.md \
             dist/*.tar.gz dist/*.zip dist/checksums.txt
