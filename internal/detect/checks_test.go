@@ -223,6 +223,11 @@ func TestFindingsAreLocalised(t *testing.T) {
 // TestFindingOnNonStandardPort covers the second way a check can be reached:
 // bound to the detected service rather than to a port. A Redis instance on
 // 19300 is still a Redis instance, and the port-bound rule alone would miss it.
+// TestFindingOnNonStandardPort: a check bound to a service has to follow that
+// service onto a port nobody predicted. This is the built-in rule; the plugin
+// half of the same promise is covered by
+// TestPluginServiceBoundCheckFollowsTheService below and by the index test in
+// detect_test.go.
 func TestFindingOnNonStandardPort(t *testing.T) {
 	host, port := fakeRedis(t)
 	db := mustBuiltin(t)
@@ -244,6 +249,118 @@ func TestFindingOnNonStandardPort(t *testing.T) {
 	}
 	if len(svc.Findings) == 0 {
 		t.Fatal("the service-bound check should have fired on a non standard port")
+	}
+}
+
+// TestPluginServiceBoundCheckFollowsTheService is the plugin half of the same
+// promise: a check whose rule came from a plugin, bound to a service rather than
+// to a port, must run when that service is identified on a port the plugin never
+// mentioned. It used to be dropped into the generic list instead -- which meant
+// it ran against every port in the scan and was never reached by its service.
+func TestPluginServiceBoundCheckFollowsTheService(t *testing.T) {
+	host, port := fakeRedis(t)
+	db := mustBuiltin(t)
+
+	// A plugin that identifies redis anywhere (so the port is unpredictable)
+	// and binds its own check to the service name.
+	if _, err := db.AddYAMLFront([]byte(`
+apiVersion: argus.fingerprint/v1
+id: test-plugin-service-binding
+rules:
+  - id: test-redis-any-port
+    probes:
+      - id: ping
+        send: "PING\r\n"
+        read_timeout: 2s
+    matches:
+      - id: pong
+        pattern: '(?m)^\+PONG'
+        set: {service: redis, product: Redis}
+  - id: test-plugin-redis-check
+    kind: check
+    service: redis
+    probes:
+      - id: info
+        send: "INFO server\r\n"
+        read_timeout: 2s
+    matches:
+      - id: plugin-unauth
+        pattern: '(?m)^redis_version:'
+        finding:
+          title: "Redis: a plugin check bound to the service"
+          severity: medium
+`), "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := New(Options{DB: db, ProbeTimeout: 2 * time.Second, Lang: "en", EnableChecks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := d.Detect(context.Background(), host, model.Port{Port: port, Proto: "tcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.Name != "redis" {
+		t.Fatalf("service = %q, want redis", svc.Name)
+	}
+	found := false
+	for _, f := range svc.Findings {
+		if f.ID == "plugin-unauth" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the plugin check bound to service redis did not run on port %d: findings %v",
+			port, svc.Findings)
+	}
+}
+
+// TestPluginServiceBoundCheckDoesNotRunWithoutTheService is the other half of
+// the same promise, and the half a report cannot show you: the same check, on
+// the same port, when nothing identified the service. A rule that reaches the
+// port on its own would fire here -- the probe still gets its answer -- and a
+// redis conclusion about a port nobody identified is the false positive that a
+// service binding exists to prevent.
+func TestPluginServiceBoundCheckDoesNotRunWithoutTheService(t *testing.T) {
+	host, port := fakeRedis(t)
+	db := mustBuiltin(t)
+	if _, err := db.AddYAMLFront([]byte(`
+apiVersion: argus.fingerprint/v1
+id: test-plugin-service-binding-only
+rules:
+  - id: test-plugin-redis-check
+    kind: check
+    service: redis
+    probes:
+      - id: info
+        send: "INFO server\r\n"
+        read_timeout: 2s
+    matches:
+      - id: plugin-unauth
+        pattern: '(?m)^redis_version:'
+        finding:
+          title: "Redis: a plugin check bound to the service"
+          severity: medium
+`), "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := New(Options{DB: db, ProbeTimeout: 2 * time.Second, Lang: "en", EnableChecks: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, err := d.Detect(context.Background(), host, model.Port{Port: port, Proto: "tcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if svc.Name == "redis" {
+		t.Fatalf("port %d was identified as redis, so this test proves nothing", port)
+	}
+	for _, f := range svc.Findings {
+		if f.ID == "plugin-unauth" {
+			t.Errorf("a check bound to service redis ran on port %d, where nothing identified redis", port)
+		}
 	}
 }
 

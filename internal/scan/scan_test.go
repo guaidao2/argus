@@ -1,8 +1,10 @@
 package scan
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
+	"net"
 	"net/netip"
 	"syscall"
 	"testing"
@@ -43,8 +45,70 @@ func TestUDPPayloadSelection(t *testing.T) {
 	if got := udpPayload(11211); string(got) != "stats\r\n" {
 		t.Errorf("memcached probe = %q", got)
 	}
+	// A portmapper answers a well formed call and drops everything else, so the
+	// payload for 111 has to be that call: program 100000, version 2, procedure
+	// 4 (DUMP), AUTH_NULL. Anything shorter is discarded in silence and the port
+	// can never be classified better than open|filtered.
+	const portmapDump = "000000010000000000000002000186a0000000020000000400000000000000000000000000000000"
+	if got := hex.EncodeToString(udpPayload(111)); got != portmapDump {
+		t.Errorf("portmap probe should be a 40 byte DUMP call:\n got %s\nwant %s", got, portmapDump)
+	}
 	if got := udpPayload(1); got != nil {
 		t.Errorf("an unknown port should have no specific payload, got %x", got)
+	}
+}
+
+// TestUDPPortmapPayloadGetsAnAnswer is the behaviour the payload exists for: a
+// portmapper replies to the scan probe, so the port is open rather than
+// open|filtered and the fingerprint and check rules for 111 get to run at all.
+//
+// Before the payload existed this port answered nothing -- not because it was
+// filtered, but because the probe was one byte it could not decode -- and a
+// silent UDP port is indistinguishable from a filtered one.
+func TestUDPPortmapPayloadGetsAnAnswer(t *testing.T) {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	port := conn.LocalAddr().(*net.UDPAddr).Port
+
+	// A portmapper: it decodes the call, refuses anything it cannot read, and
+	// answers a DUMP with a registry that names itself.
+	go func() {
+		buf := make([]byte, 512)
+		n, from, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			return
+		}
+		call := buf[:n]
+		if len(call) != 40 || hex.EncodeToString(call[12:20]) != "000186a000000002" ||
+			hex.EncodeToString(call[20:24]) != "00000004" {
+			return // not a DUMP call for program 100000: no answer, like the real thing
+		}
+		// xid, REPLY, MSG_ACCEPTED, AUTH_NULL verifier, SUCCESS, then one entry
+		// (more entries follow, program 100000, version 2, prot tcp, port 111).
+		const answer = "00000001000000010000000000000000000000000000000000000001000186a000000002000000060000006f"
+		raw, err := hex.DecodeString(answer)
+		if err != nil {
+			return
+		}
+		_, _ = conn.WriteToUDP(raw, from)
+	}()
+
+	e := &Engine{dialer: &net.Dialer{}}
+	state, reason, _ := e.udpProbeWith(context.Background(),
+		netip.MustParseAddr("127.0.0.1"), port, 3*time.Second, udpPayload(111))
+	if state != model.StateOpen {
+		t.Errorf("portmap port state = %q (reason %q), want open: the probe got no answer", state, reason)
+	}
+
+	// And the control: the one byte payload this port used to send is dropped in
+	// silence by the same server, which is why a portmapper read as
+	// open|filtered no matter how long the scan waited.
+	if state, _, _ := e.udpProbeWith(context.Background(),
+		netip.MustParseAddr("127.0.0.1"), port, 1*time.Second, nil); state != model.StateOpenFiltered {
+		t.Errorf("an undecodable datagram produced state %q, want open|filtered", state)
 	}
 }
 

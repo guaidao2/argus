@@ -1,0 +1,75 @@
+# Publishing argus.
+#
+# A tag is the release: push vX.Y.Z and this builds the archives a user
+# downloads, checksums them, and publishes them.
+#
+# It runs `make package`, the same path the 1.0.0 archives were built from, so
+# asset names, layout and contents do not change under people's feet between
+# versions. GoReleaser stays what it was, a local tool for draft builds.
+#
+# The toolchain is pinned by go.mod's `go` directive: setup-go installs exactly
+# that version and GOTOOLCHAIN=local keeps the build on it instead of quietly
+# fetching another, which is what makes two builds of the same tag comparable.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # gh release create writes the release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # --generate-notes reads the commits behind the tag
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: false
+
+      # Nothing gets published from a tree that does not pass its own checks.
+      - name: Verify the tree
+        run: |
+          fmt="$(gofmt -l .)"
+          if [ -n "$fmt" ]; then echo "not gofmt'd:"; echo "$fmt"; exit 1; fi
+          go vet ./...
+          go test ./...
+
+      # dist/ holds the previous release in this repository, so it is cleared
+      # first: what is published has to be what this run built.
+      - name: Build the archives
+        run: |
+          rm -rf dist
+          make package VERSION="${GITHUB_REF_NAME#v}"
+
+      # An archive that does not contain a binary is not worth publishing, and
+      # a missing target is easy to miss in a directory listing.
+      - name: Check the archives
+        run: |
+          cd dist
+          count="$(ls -1 *.tar.gz *.zip 2>/dev/null | wc -l)"
+          test "$count" -eq 6 || { echo "expected 6 archives, found $count"; ls -l; exit 1; }
+          for f in *.tar.gz; do
+            tar -tzf "$f" | grep -qx "[^/]*/argus" || { echo "no argus binary in $f"; exit 1; }
+          done
+          for f in *.zip; do
+            unzip -l "$f" | grep -q "argus\.exe" || { echo "no argus.exe in $f"; exit 1; }
+          done
+          sha256sum *.tar.gz *.zip > checksums.txt
+          cat checksums.txt
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "argus ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            dist/*.tar.gz dist/*.zip dist/checksums.txt

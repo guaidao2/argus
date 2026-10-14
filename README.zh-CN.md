@@ -68,7 +68,7 @@ argus --lang zh -sV --hack-reason 10.0.0.1
 
 ```
 $ argus --lang zh -Pn -sV --hack-reason --reason -p 22,18080 127.0.0.1
-启动 Argus 1.0.0（ https://github.com/guaidao2/argus ）时间 2025-04-01 17:12:44 CST
+启动 Argus 1.0.1（ https://github.com/guaidao2/argus ）时间 2025-04-01 17:12:44 CST
 Argus 扫描报告 127.0.0.1
 主机在线（延迟 0.00003 秒）。
 端口      状态  服务 原因        版本
@@ -186,7 +186,7 @@ SYN，必须收到 RST 或 SYN/ACK。整个过程不出本机。
 既然两种模式不可互换，模式就会写进每一种输出；一次扫描用了两种也会说明：
 
 ```
-启动 Argus 1.0.0（ https://github.com/guaidao2/argus ）时间 2025-04-01 17:12:44 CST
+启动 Argus 1.0.1（ https://github.com/guaidao2/argus ）时间 2025-04-01 17:12:44 CST
 扫描技术：SYN 扫描（原始套接字，半开）；回环与本机地址使用 TCP connect 探测
 ```
 

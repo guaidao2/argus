@@ -28,6 +28,85 @@ func TestBuiltinRulesLoad(t *testing.T) {
 	}
 }
 
+// TestPluginRulesAreIndexedLikeBuiltins pins down how a plugin rule is filed in
+// the database, because the ways it can go wrong are all silent:
+//
+//   - a plugin check that binds to a service must be reachable when that service
+//     is identified, on whatever port it was identified on (a rule that is never
+//     reached looks exactly like a rule that did not match);
+//   - it must NOT be handed to every port in the scan just because it has no
+//     port list, which is what "no ports means everywhere" would do to it;
+//   - a rule with no bindings at all must keep meaning "every open port",
+//     including a fingerprint from a plugin, since a fingerprint has no service
+//     index to be reached through and dropping it from the generic list would
+//     make it dead rather than narrow.
+func TestPluginRulesAreIndexedLikeBuiltins(t *testing.T) {
+	db := NewDB()
+	if _, err := db.AddYAMLFront([]byte(`
+apiVersion: argus.fingerprint/v1
+id: test-indexing
+rules:
+  - id: plugin-everywhere
+    probes: [{id: p, send: ""}]
+    matches: [{id: m, pattern: 'anywhere', set: {service: anything}}]
+  - id: plugin-by-service
+    kind: check
+    service: redis
+    probes: [{id: p, send: ""}]
+    matches: [{id: m, pattern: 'service', set: {service: redis}}]
+  - id: plugin-by-port-and-service
+    kind: check
+    ports: [19300]
+    service: redis
+    probes: [{id: p, send: ""}]
+    matches: [{id: m, pattern: 'both', set: {service: redis}}]
+`), "test"); err != nil {
+		t.Fatal(err)
+	}
+
+	seen := func(q RuleQuery) map[string]bool {
+		out := map[string]bool{}
+		for _, r := range db.RulesFor(q) {
+			out[r.ID] = true
+		}
+		return out
+	}
+
+	// The service binding is what makes a rule reachable on a port nobody
+	// predicted, and both the service-bound and the port-bound rule answer to it.
+	byService := seen(RuleQuery{Port: 45678, Proto: "tcp", Checks: true, Service: "redis"})
+	for _, want := range []string{"plugin-by-service", "plugin-by-port-and-service", "plugin-everywhere"} {
+		if !byService[want] {
+			t.Errorf("rule %q is not selected for service redis on port 45678: %v", want, byService)
+		}
+	}
+
+	// Without an identified service, a service-bound check has nothing to match
+	// on -- and it must not fall back to being a rule about every port.
+	unbound := seen(RuleQuery{Port: 45678, Proto: "tcp", Checks: true})
+	if unbound["plugin-by-service"] {
+		t.Error("a check bound only to a service was handed to a port where that service was never identified")
+	}
+	if !unbound["plugin-everywhere"] {
+		t.Error("a rule with no port and no service binding must still apply to every port")
+	}
+	if unbound["plugin-by-port-and-service"] {
+		t.Error("a rule bound to port 19300 was selected for port 45678")
+	}
+
+	// Port bindings keep working, with and without an identified service.
+	pinned := seen(RuleQuery{Port: 19300, Proto: "tcp", Checks: true})
+	if !pinned["plugin-by-port-and-service"] {
+		t.Error("a rule bound to port 19300 was not selected for port 19300")
+	}
+
+	// And checks stay off unless they were asked for.
+	off := seen(RuleQuery{Port: 19300, Proto: "tcp", Service: "redis"})
+	if off["plugin-by-port-and-service"] || off["plugin-by-service"] {
+		t.Error("a check rule ran without checks being enabled")
+	}
+}
+
 func TestRuleOverrideReplacesOldRule(t *testing.T) {
 	db := NewDB()
 	first := []byte(`

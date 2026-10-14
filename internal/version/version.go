@@ -21,9 +21,11 @@ const (
 	Homepage = "https://github.com/guaidao2/argus"
 )
 
-// Injected via -ldflags. Keep the defaults sane for `go run`.
+// Injected via -ldflags. Keep the defaults sane for `go run` and for
+// `go install module@version`, which compiles the source as it is checked out
+// and cannot inject anything.
 var (
-	Version = "1.0.0"
+	Version = "1.0.1"
 	Commit  = "unknown"
 	Date    = "unknown"
 )

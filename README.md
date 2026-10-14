@@ -76,7 +76,7 @@ Example output:
 
 ```
 $ argus -Pn -sV --hack-reason --reason -p 22,80,443 192.0.2.10
-Starting Argus 1.0.0 ( https://github.com/guaidao2/argus ) at 2025-04-01 09:12:44 UTC
+Starting Argus 1.0.1 ( https://github.com/guaidao2/argus ) at 2025-04-01 09:12:44 UTC
 Argus scan report for 192.0.2.10
 Host is up (0.00231s latency).
 Not shown: 1 closed tcp port (conn-refused)
@@ -207,7 +207,7 @@ Because the two techniques are not interchangeable, the mode is written into
 every output, and a scan that used both says so:
 
 ```
-Starting Argus 1.0.0 ( https://github.com/guaidao2/argus ) at 2025-04-01 09:12:44 UTC
+Starting Argus 1.0.1 ( https://github.com/guaidao2/argus ) at 2025-04-01 09:12:44 UTC
 Scan technique: SYN scan (raw sockets, half open); loopback and local addresses are probed with TCP connect
 ```
 

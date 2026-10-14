@@ -388,8 +388,19 @@ func TestRunAutoScanType(t *testing.T) {
 	if !strings.Contains(out, "Scan technique: TCP connect (auto-selected:") {
 		t.Errorf("auto should explain its choice:\n%s", out)
 	}
-	if !strings.Contains(out, "these targets are local addresses") &&
-		!strings.Contains(out, "no raw socket privileges") {
+	// Which reason is given depends on the platform, not on the flag: a build
+	// with no raw socket support at all, a socket it may not open, or a target
+	// that is local. Checking against the catalog rather than against one
+	// platform's wording is what keeps this test honest everywhere, and it is
+	// also what made it fail on Windows until now.
+	tr := newTestCatalog(t)
+	explained := false
+	for _, key := range []string{"reason.local_targets", "reason.syn_privileges", "reason.syn_unsupported"} {
+		if strings.Contains(out, tr.T(key)) {
+			explained = true
+		}
+	}
+	if !explained {
 		t.Errorf("the reason is missing:\n%s", out)
 	}
 }

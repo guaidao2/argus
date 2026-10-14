@@ -360,6 +360,7 @@ func (db *DB) AddYAML(raw []byte, source string) (replaced []string, err error) 
 // AddYAMLFront is the plugin entry point. Plugin rules are placed ahead of the
 // built-in ones so that a user-supplied fingerprint actually gets a chance to
 // match: a rule that is tried after the built-in fallback would never fire.
+// They are indexed exactly like built-in rules, service bindings included.
 func (db *DB) AddYAMLFront(raw []byte, source string) (replaced []string, err error) {
 	return db.addDocuments(raw, source, true)
 }
@@ -392,18 +393,32 @@ func (db *DB) addDocuments(raw []byte, source string, front bool) (replaced []st
 			db.removeRule(r.ID)
 		}
 		db.byID[r.ID] = r
+		// A rule with no port binding applies to every open port -- with one
+		// exception: a check that binds to a service is a claim about that
+		// service wherever it runs, and running its probe against every port of
+		// the scan is not what "service: redis" means. Those are reached through
+		// the service index instead, which both branches below build.
+		everywhere := len(r.Ports) == 0 && !(r.IsCheck() && r.Service != "")
 		if front {
 			db.rules = append([]*Rule{r}, db.rules...)
-			if len(r.Ports) == 0 {
+			if everywhere {
 				db.generic = append([]*Rule{r}, db.generic...)
 			}
 			for _, p := range r.Ports {
 				db.byPort[p] = append([]*Rule{r}, db.byPort[p]...)
 			}
+			// Plugin rules are indexed exactly like built-in ones. A plugin check
+			// that binds to a service has to follow that service onto whatever
+			// port it turns up on, or the binding silently does nothing and only
+			// the built-in checks reach a port nobody predicted.
+			if r.Service != "" {
+				key := strings.ToLower(r.Service)
+				db.byService[key] = append([]*Rule{r}, db.byService[key]...)
+			}
 			continue
 		}
 		db.rules = append(db.rules, r)
-		if len(r.Ports) == 0 {
+		if everywhere {
 			db.generic = append(db.generic, r)
 		}
 		for _, p := range r.Ports {

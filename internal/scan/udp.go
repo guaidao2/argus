@@ -20,6 +20,16 @@ import (
 // do not surface that error a silent port stays open|filtered, which is
 // exactly what nmap reports in the same situation.
 func (e *Engine) udpProbe(ctx context.Context, addr netip.Addr, port int, timeout time.Duration) (model.State, model.Reason, time.Duration) {
+	return e.udpProbeWith(ctx, addr, port, timeout, udpPayload(port))
+}
+
+// udpProbeWith is udpProbe with the payload chosen by the caller.
+//
+// Whether a silent UDP port is silent because the service has nothing to say or
+// because it could not decode what it was sent is the whole question the payload
+// answers, so it is worth being able to pose it directly -- against a port a
+// test can actually bind.
+func (e *Engine) udpProbeWith(ctx context.Context, addr netip.Addr, port int, timeout time.Duration, payload []byte) (model.State, model.Reason, time.Duration) {
 	target := netipToTCP(addr, port)
 
 	dialCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -37,7 +47,6 @@ func (e *Engine) udpProbe(ctx context.Context, addr netip.Addr, port int, timeou
 	// Always send something, even a zero length datagram: a port that receives
 	// nothing at all answers nothing, so the probe would learn nothing and
 	// every silent port would look identical.
-	payload := udpPayload(port)
 	if payload == nil {
 		payload = []byte{0}
 	}
@@ -102,6 +111,16 @@ var udpTextPayloads = map[int]string{
 // udpHexPayloads are binary probes. Every entry must be valid hex; the test
 // suite decodes all of them.
 var udpHexPayloads = map[int]string{
+	// Portmap/rpcbind DUMP: an RPC call for program 100000, version 2,
+	// procedure 4, with AUTH_NULL credentials and verifier. 40 bytes, and UDP
+	// carries no record marker.
+	//
+	// This port used to send a single 0x00 byte, which a portmapper drops
+	// without a word because it cannot decode it: the reply never came, the
+	// port was classified open|filtered, and detection only runs on open ports,
+	// so no fingerprint or check for 111 could ever be reached over UDP. A real
+	// call is what makes the port answer.
+	111: "000000010000000000000002000186a0000000020000000400000000000000000000000000000000",
 	// DNS standard query (RD set) for www.example.com A.
 	53: "12340100000100000000000003777777076578616d706c6503636f6d0000010001",
 	// mDNS query for "localhost" A.
