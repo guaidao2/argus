@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # --generate-notes reads the commits behind the tag
+          fetch-depth: 1 # the archives are built from this tree; tags are not used
 
       - uses: actions/setup-go@v5
         with:
@@ -65,32 +65,21 @@ jobs:
           sha256sum *.tar.gz *.zip > checksums.txt
           cat checksums.txt
 
+      # The notes are written by hand and committed with the release, so a tag
+      # without them fails here instead of publishing an empty description.
+      - name: Check the release notes
+        run: |
+          test -s "docs/releases/$GITHUB_REF_NAME.md" || {
+            echo "docs/releases/$GITHUB_REF_NAME.md is missing or empty."
+            echo "A release describes itself; write the notes, commit them, then tag."
+            exit 1
+          }
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The notes are the commits since the previous tag: this repository
-          # releases from main, so there are no pull requests for GitHub to
-          # summarise, and a bare "Full Changelog" line tells a reader nothing
-          # about what changed.
-          prev="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
-          {
-            echo "argus ${GITHUB_REF_NAME#v}"
-            echo
-            if [ -n "$prev" ]; then
-              echo "Changes since \`$prev\`:"
-              echo
-              git log --no-merges --pretty='* %s' "$prev..$GITHUB_REF_NAME"
-              echo
-              echo "**Full changelog**: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$GITHUB_REF_NAME"
-            else
-              echo "Changes:"
-              echo
-              git log --no-merges --pretty='* %s' "$GITHUB_REF_NAME"
-            fi
-          } > RELEASE_NOTES.md
-          cat RELEASE_NOTES.md
           gh release create "$GITHUB_REF_NAME" \
-            --title "argus ${GITHUB_REF_NAME#v}" \
-            --notes-file RELEASE_NOTES.md \
+            --title "argus $GITHUB_REF_NAME" \
+            --notes-file "docs/releases/$GITHUB_REF_NAME.md" \
             dist/*.tar.gz dist/*.zip dist/checksums.txt

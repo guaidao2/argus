@@ -1,0 +1,63 @@
+# Keeping a published release equal to its notes file.
+#
+# The notes for a version live in docs/releases/vX.Y.Z.md and are written by
+# hand. release.yml publishes them as the release body when the tag is pushed;
+# this workflow handles the other direction, so that editing the file later
+# (fixing a typo, adding a detail) updates the release instead of leaving the two
+# describing the same version differently.
+#
+# It only touches a release whose tag matches the file name, and it never
+# creates one: publishing is release.yml's job, from a tag.
+name: release-notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/releases/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release edit writes the release
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the diff below needs the commit this push came from
+
+      - name: Update the release bodies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          after="${{ github.event.after || github.sha }}"
+
+          # A push syncs what it changed; the manual button syncs every notes
+          # file, which is what you want after editing one by hand.
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            changed="$(ls docs/releases/*.md 2>/dev/null || true)"
+          elif [ -z "$before" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "no usable previous commit in this event; nothing to compare"
+            exit 0
+          else
+            changed="$(git diff --name-only "$before" "$after" -- 'docs/releases/*.md')"
+          fi
+
+          if [ -z "$changed" ]; then
+            echo "no release notes to sync"
+            exit 0
+          fi
+
+          for file in $changed; do
+            tag="$(basename "$file" .md)"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "updating the body of $tag from $file"
+              gh release edit "$tag" --title "argus $tag" --notes-file "$file"
+            else
+              echo "$tag has no release yet; release.yml publishes it from $file"
+            fi
+          done

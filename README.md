@@ -466,6 +466,20 @@ make cover
 make cross      # static binaries for linux/darwin/windows
 ```
 
+Releasing: write the notes for the version in `docs/releases/vX.Y.Z.md`, commit
+them, then push the tag.
+
+```bash
+$EDITOR docs/releases/v1.0.2.md
+git commit -am "docs: release notes for 1.0.2" && git push
+git tag -a v1.0.2 -m "argus 1.0.2" && git push origin v1.0.2
+```
+
+The workflow runs the checks, builds the archives and publishes the release with
+those notes as its body. A tag whose notes file is missing fails rather than
+publishing an empty description: a release says what it changed in its own words,
+it is not summarised from commit subjects.
+
 Layout:
 
 ```

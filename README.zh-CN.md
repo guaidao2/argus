@@ -419,6 +419,17 @@ make cover
 make cross      # 生成 linux/darwin/windows 静态二进制
 ```
 
+发版：把该版本的说明写进 `docs/releases/vX.Y.Z.md`，提交后再推 tag。
+
+```bash
+$EDITOR docs/releases/v1.0.2.md
+git commit -am "docs: release notes for 1.0.2" && git push
+git tag -a v1.0.2 -m "argus 1.0.2" && git push origin v1.0.2
+```
+
+工作流会跑检查、打包，并以这份说明作为 release 正文发布。缺少说明文件的 tag 会直接失败，
+而不是发出一个空描述：一个版本用自己的话讲清改了什么，不是从 commit 主题汇总出来的。
+
 目录结构：
 
 ```
